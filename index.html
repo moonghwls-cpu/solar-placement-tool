@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>태양광 배치 툴</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', sans-serif; font-size: 13px; background: #f0f0f0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+/* 상단 패널 */
+#top-panel {
+  background: #1e2a3a;
+  color: #fff;
+  padding: 8px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+  border-bottom: 2px solid #2ecc71;
+}
+#top-panel label { font-size: 11px; color: #aaa; display: block; margin-bottom: 2px; }
+#top-panel select, #top-panel input[type="number"] {
+  background: #2c3e50; color: #fff; border: 1px solid #4a6278;
+  border-radius: 4px; padding: 3px 6px; font-size: 12px; width: 75px;
+}
+#top-panel input[type="range"] { width: 100px; accent-color: #2ecc71; vertical-align: middle; }
+.ctrl-group { display: flex; flex-direction: column; }
+.ctrl-row { display: flex; align-items: center; gap: 4px; }
+.btn-toggle {
+  background: #2c3e50; color: #aaa; border: 1px solid #4a6278;
+  border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px;
+  transition: all 0.15s;
+}
+.btn-toggle.active { background: #2ecc71; color: #000; border-color: #2ecc71; font-weight: 600; }
+.result-pill {
+  background: #2c3e50; border: 1px solid #4a6278; border-radius: 20px;
+  padding: 3px 10px; font-size: 11px; color: #7fb3c8; white-space: nowrap;
+}
+.result-pill span { color: #fff; font-weight: 600; }
+#res-series { font-size: 11px; }
+.divider { width: 1px; height: 36px; background: #4a6278; margin: 0 2px; flex-shrink: 0; }
+
+/* 메인 영역 */
+#main { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+
+/* 지도 영역 */
+#map-wrap { position: relative; flex: 1; min-width: 0; }
+#map { width: 100%; height: 100%; }
+#overlay-canvas { position: absolute; top: 0; left: 0; }
+
+/* 우측 패널 */
+#right-panel {
+  width: 300px; background: #fff; border-left: 1px solid #ddd;
+  display: flex; flex-direction: column; overflow-y: auto; flex-shrink: 0;
+}
+.rp-section { padding: 12px; border-bottom: 1px solid #eee; }
+.rp-section h3 { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; font-weight: 600; }
+.rp-section h4 { font-size: 13px; font-weight: 700; margin-bottom: 6px; color: #222; }
+.search-wrap { display: flex; gap: 6px; padding: 10px 12px; border-bottom: 1px solid #eee; background: #f8f8f8; }
+.search-wrap input { flex: 1; padding: 7px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; outline: none; }
+.search-wrap input:focus { border-color: #2ecc71; }
+.search-wrap button { padding: 7px 14px; background: #2ecc71; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.search-wrap button:hover { background: #27ae60; }
+.contact-item { font-size: 12px; margin-bottom: 5px; line-height: 1.4; }
+.contact-item strong { color: #555; }
+.contact-item a { color: #2980b9; text-decoration: none; }
+.contact-item a:hover { text-decoration: underline; }
+.link-btn {
+  display: block; width: 100%; padding: 8px 12px; background: #2980b9; color: #fff;
+  border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;
+  text-align: center; margin-top: 6px; text-decoration: none;
+}
+.link-btn:hover { background: #1a6ba0; }
+.link-btn.green { background: #27ae60; }
+.link-btn.green:hover { background: #1e8449; }
+.no-data { color: #aaa; font-size: 12px; font-style: italic; }
+hr.rp-hr { border: none; border-top: 1px solid #eee; margin: 8px 0; }
+</style>
+</head>
+<body>
+
+<!-- 상단 컨트롤 패널 -->
+<div id="top-panel">
+  <div class="ctrl-group">
+    <label>모듈 모델</label>
+    <select id="sel-model">
+      <option value="hanwha2">한화 2등급</option>
+      <option value="hanwha4">한화 4등급</option>
+      <option value="trina">트리나</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>출력 (Wp)</label>
+    <input type="number" id="inp-wp" value="500" min="1" max="1000" step="1">
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="ctrl-group">
+    <label>건물 가로 (m)</label>
+    <input type="number" id="inp-bw" value="20" min="1" max="500" step="0.5">
+  </div>
+  <div class="ctrl-group">
+    <label>건물 세로 (m)</label>
+    <input type="number" id="inp-bh" value="30" min="1" max="500" step="0.5">
+  </div>
+  <div class="ctrl-group">
+    <label>용마루 폭 (m)</label>
+    <input type="number" id="inp-ridge" value="0.5" min="0.1" max="5" step="0.1">
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="ctrl-group">
+    <label>경사각: <span id="lbl-angle">10</span>°</label>
+    <div class="ctrl-row">
+      <span style="font-size:10px;color:#aaa">0°</span>
+      <input type="range" id="sl-angle" min="0" max="20" value="10" step="1">
+      <span style="font-size:10px;color:#aaa">20°</span>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="ctrl-group">
+    <label>배치 방향</label>
+    <div class="ctrl-row">
+      <button class="btn-toggle active" id="btn-forward">정방향</button>
+      <button class="btn-toggle" id="btn-reverse">역방향</button>
+    </div>
+  </div>
+  <div class="ctrl-group">
+    <label>배치 모드</label>
+    <div class="ctrl-row">
+      <button class="btn-toggle" id="btn-tight">밀착</button>
+      <button class="btn-toggle active" id="btn-spaced">이격</button>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="result-pill">L&nbsp;<span id="res-L">-</span>m</div>
+  <div class="result-pill">Gap&nbsp;<span id="res-Gap">-</span>m</div>
+  <div class="result-pill">Pitch&nbsp;<span id="res-Pitch">-</span>m</div>
+  <div class="result-pill">남측이격&nbsp;<span id="res-south">-</span>m</div>
+  <div class="result-pill">북측이격&nbsp;<span id="res-north">-</span>m</div>
+  <div class="result-pill">모듈&nbsp;<span id="res-count">-</span>장</div>
+  <div class="result-pill">용량&nbsp;<span id="res-cap">-</span>kW</div>
+  <div class="result-pill" id="res-series">직병렬: -</div>
+</div>
+
+<!-- 메인 -->
+<div id="main">
+  <div id="map-wrap">
+    <div id="map"></div>
+    <canvas id="overlay-canvas"></canvas>
+  </div>
+  <div id="right-panel">
+    <div class="search-wrap">
+      <input type="text" id="inp-addr" placeholder="주소 검색 (예: 서울시 강남구...)">
+      <button onclick="ui.searchAddress()">검색</button>
+    </div>
+    <div id="rp-kepco" class="rp-section">
+      <h3>KEPCO 담당자</h3>
+      <p class="no-data">주소를 검색하세요.</p>
+    </div>
+    <div class="rp-section">
+      <h3>KEPCO 링크</h3>
+      <a class="link-btn" href="https://www.kepco.co.kr/home/about/locations.do" target="_blank">▶ 전력공급부 위치 / 연락처</a>
+      <a class="link-btn green" href="https://online.kepco.co.kr/EWM092D00" target="_blank">▶ 선로 여유 용량 조회</a>
+    </div>
+    <div id="rp-local" class="rp-section">
+      <h3>지자체 담당자</h3>
+      <p class="no-data">주소를 검색하세요.</p>
+    </div>
+  </div>
+</div>
+
+<script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=ec192a0d86846241a90a82d6ef7dd806&libraries=services"></script>
+<script>
+// ── 1. KEPCO 및 지자체 데이터 ─────────────────────────
+const KEPCO_DATA = {};
+const LOCAL_DATA = {};
+</script>
+<script>
+// ── 2. 계산 모듈 ──────────────────────────────────────
+const calc = {};
+</script>
+<script>
+// ── 3. 직병렬 최적화 모듈 ─────────────────────────────
+const series = {};
+</script>
+<script>
+// ── 4. 배치 계산 모듈 ─────────────────────────────────
+const placement = {};
+</script>
+<script>
+// ── 5. 렌더링 모듈 ────────────────────────────────────
+const render = {};
+</script>
+<script>
+// ── 6. 지도 컨트롤 모듈 ───────────────────────────────
+const mapCtrl = {};
+</script>
+<script>
+// ── 7. 우측 패널 모듈 ─────────────────────────────────
+const kepcoPanel = {};
+</script>
+<script>
+// ── 8. UI 모듈 (진입점) ───────────────────────────────
+const ui = {
+  getState() { return {}; },
+  searchAddress() {},
+  init() {}
+};
+kakao.maps.load(() => { mapCtrl.init && mapCtrl.init(); ui.init(); });
+</script>
+</body>
+</html>
