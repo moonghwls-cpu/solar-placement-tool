@@ -470,7 +470,99 @@ const placement = {
 </script>
 <script>
 // ── 5. 렌더링 모듈 ────────────────────────────────────
-const render = {};
+const render = {
+  draw() {
+    const canvas = document.getElementById('overlay-canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (!mapCtrl.map) return;
+
+    const st = ui.getState();
+    const mpp = mapCtrl.mPerPx; // meters per pixel
+    const bCenter = mapCtrl.latLngToPx(mapCtrl.buildingLatLng);
+
+    // Convert building-local meter coords to canvas pixels
+    // Building origin (0,0) = SW corner; canvas Y is inverted (down = +)
+    const toCanvasX = (mx) => bCenter.x + (mx - st.buildingW / 2) / mpp;
+    const toCanvasY = (my) => bCenter.y + (st.buildingH / 2 - my) / mpp;
+    const px = (m) => m / mpp;
+
+    // 1. Building outline (purple)
+    ctx.strokeStyle = '#8B008B';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([]);
+    ctx.strokeRect(
+      toCanvasX(0),
+      toCanvasY(st.buildingH),
+      px(st.buildingW),
+      px(st.buildingH)
+    );
+
+    // 2. 500mm offset red dashed line
+    const off = calc.OFFSET;
+    ctx.strokeStyle = '#ff0000';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(
+      toCanvasX(off),
+      toCanvasY(st.buildingH - off),
+      px(st.buildingW - off * 2),
+      px(st.buildingH - off * 2)
+    );
+    ctx.setLineDash([]);
+
+    // 3. Ridge (gray band)
+    ctx.fillStyle = '#999999';
+    if (st.forward) {
+      // Horizontal ridge at vertical center
+      const ridgeMidY = st.buildingH / 2;
+      ctx.fillRect(
+        toCanvasX(0),
+        toCanvasY(ridgeMidY + st.ridgeW / 2),
+        px(st.buildingW),
+        px(st.ridgeW)
+      );
+    } else {
+      // Vertical ridge at horizontal center
+      const ridgeMidX = st.buildingW / 2;
+      ctx.fillRect(
+        toCanvasX(ridgeMidX - st.ridgeW / 2),
+        toCanvasY(st.buildingH),
+        px(st.ridgeW),
+        px(st.buildingH)
+      );
+    }
+
+    // 4. Modules
+    const borderPx = Math.max(1, px(0.002));
+
+    const drawModules = (modules) => {
+      modules.forEach(m => {
+        ctx.fillStyle = '#87CEEB';
+        ctx.fillRect(toCanvasX(m.x), toCanvasY(m.y + m.h), px(m.w), px(m.h));
+        ctx.strokeStyle = '#ff0000';
+        ctx.lineWidth = borderPx;
+        ctx.setLineDash([]);
+        ctx.strokeRect(toCanvasX(m.x), toCanvasY(m.y + m.h), px(m.w), px(m.h));
+      });
+    };
+
+    let result;
+    if (st.forward) {
+      result = placement.forward(st);
+      drawModules(result.southModules);
+      drawModules(result.northModules);
+    } else {
+      result = placement.reverse(st);
+      drawModules(result.leftModules);
+      drawModules(result.rightModules);
+    }
+
+    // 5. Update top panel
+    ui.updateResults(result);
+  }
+};
 </script>
 <script>
 // ── 6. 지도 컨트롤 모듈 ───────────────────────────────
@@ -592,7 +684,32 @@ const ui = {
   },
   getState() { return this.state; },
   updateResults(result) {
-    // filled in Task 5
+    const st = this.state;
+    const { L, Gap, Pitch } = calc.fromAngle(st.angle);
+
+    document.getElementById('res-L').textContent = L.toFixed(3);
+    document.getElementById('res-Gap').textContent = Gap.toFixed(3);
+    document.getElementById('res-Pitch').textContent = Pitch.toFixed(3);
+
+    let totalModules = 0;
+    let southGap = 0;
+    let northGap = 0;
+
+    if (st.forward) {
+      totalModules = result.cols * (result.southRows + result.northRows);
+      southGap = Math.max(0, result.avNS - result.southUsed);
+      northGap = Math.max(0, result.avNS - result.northUsed);
+    } else {
+      totalModules = result.sideCols * result.rows * 2;
+      southGap = Math.max(0, result.avV - result.usedV);
+      northGap = southGap;
+    }
+
+    document.getElementById('res-south').textContent = southGap.toFixed(3);
+    document.getElementById('res-north').textContent = northGap.toFixed(3);
+    document.getElementById('res-count').textContent = totalModules;
+    document.getElementById('res-cap').textContent = (totalModules * st.wp / 1000).toFixed(3);
+    document.getElementById('res-series').textContent = '직병렬: ' + series.solve(totalModules).text;
   },
   searchAddress() {
     // filled in Task 7
