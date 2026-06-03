@@ -715,8 +715,65 @@ const ui = {
     // filled in Task 7
   },
   init() {
-    // filled in Task 6
-  }
+  const s = this.state;
+  const redraw = () => render.draw();
+
+  document.getElementById('sel-model').addEventListener('change', (e) => {
+    s.model = e.target.value; redraw();
+  });
+  document.getElementById('inp-wp').addEventListener('input', (e) => {
+    const v = parseFloat(e.target.value);
+    if (v > 0) { s.wp = v; redraw(); }
+  });
+  document.getElementById('inp-bw').addEventListener('input', (e) => {
+    const v = parseFloat(e.target.value);
+    if (v > 0) { s.buildingW = v; redraw(); }
+  });
+  document.getElementById('inp-bh').addEventListener('input', (e) => {
+    const v = parseFloat(e.target.value);
+    if (v > 0) { s.buildingH = v; redraw(); }
+  });
+  document.getElementById('inp-ridge').addEventListener('input', (e) => {
+    const v = parseFloat(e.target.value);
+    if (v > 0) { s.ridgeW = v; redraw(); }
+  });
+  document.getElementById('sl-angle').addEventListener('input', (e) => {
+    s.angle = parseFloat(e.target.value);
+    document.getElementById('lbl-angle').textContent = s.angle;
+    redraw();
+  });
+
+  document.getElementById('btn-forward').addEventListener('click', () => {
+    s.forward = true;
+    document.getElementById('btn-forward').classList.add('active');
+    document.getElementById('btn-reverse').classList.remove('active');
+    redraw();
+  });
+  document.getElementById('btn-reverse').addEventListener('click', () => {
+    s.forward = false;
+    document.getElementById('btn-reverse').classList.add('active');
+    document.getElementById('btn-forward').classList.remove('active');
+    redraw();
+  });
+  document.getElementById('btn-tight').addEventListener('click', () => {
+    s.spaced = false;
+    document.getElementById('btn-tight').classList.add('active');
+    document.getElementById('btn-spaced').classList.remove('active');
+    redraw();
+  });
+  document.getElementById('btn-spaced').addEventListener('click', () => {
+    s.spaced = true;
+    document.getElementById('btn-spaced').classList.add('active');
+    document.getElementById('btn-tight').classList.remove('active');
+    redraw();
+  });
+
+  document.getElementById('inp-addr').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') this.searchAddress();
+  });
+
+  redraw();
+},
 };
 kakao.maps.load(() => { mapCtrl.init(); ui.init(); });
 </script>
