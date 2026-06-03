@@ -202,7 +202,104 @@ const render = {};
 </script>
 <script>
 // ── 6. 지도 컨트롤 모듈 ───────────────────────────────
-const mapCtrl = {};
+const mapCtrl = {
+  map: null,
+  mPerPx: 1,
+  buildingLatLng: null,
+
+  init() {
+    const container = document.getElementById('map');
+    const options = {
+      center: new kakao.maps.LatLng(37.5665, 126.9780),
+      level: 3
+    };
+    this.map = new kakao.maps.Map(container, options);
+    this.buildingLatLng = options.center;
+    this.resizeCanvas();
+    this.updateScale();
+
+    kakao.maps.event.addListener(this.map, 'zoom_changed', () => {
+      this.updateScale(); render.draw && render.draw();
+    });
+    kakao.maps.event.addListener(this.map, 'center_changed', () => {
+      render.draw && render.draw();
+    });
+    window.addEventListener('resize', () => {
+      this.resizeCanvas(); this.updateScale(); render.draw && render.draw();
+    });
+
+    const canvas = document.getElementById('overlay-canvas');
+    canvas.style.pointerEvents = 'auto';
+    let dragging = false;
+    let dragStartPx = null;
+    let dragStartLatLng = null;
+
+    canvas.addEventListener('mousedown', (e) => {
+      const st = ui.getState();
+      const px = this.canvasXY(e);
+      const bpx = this.latLngToPx(this.buildingLatLng);
+      const halfW = (st.buildingW / 2) / this.mPerPx;
+      const halfH = (st.buildingH / 2) / this.mPerPx;
+      if (Math.abs(px.x - bpx.x) < halfW && Math.abs(px.y - bpx.y) < halfH) {
+        dragging = true;
+        dragStartPx = px;
+        dragStartLatLng = this.buildingLatLng;
+        e.preventDefault();
+      }
+    });
+    canvas.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      const px = this.canvasXY(e);
+      const dx = (px.x - dragStartPx.x) * this.mPerPx;
+      const dy = (px.y - dragStartPx.y) * this.mPerPx;
+      this.buildingLatLng = this.offsetLatLng(dragStartLatLng, dx, -dy);
+      render.draw && render.draw();
+    });
+    canvas.addEventListener('mouseup', () => { dragging = false; });
+    canvas.addEventListener('mouseleave', () => { dragging = false; });
+  },
+
+  resizeCanvas() {
+    const wrap = document.getElementById('map-wrap');
+    const canvas = document.getElementById('overlay-canvas');
+    canvas.width = wrap.clientWidth;
+    canvas.height = wrap.clientHeight;
+  },
+
+  updateScale() {
+    const proj = this.map.getProjection();
+    const center = this.map.getCenter();
+    const p1 = proj.pointFromCoords(center);
+    const offsetLng = new kakao.maps.LatLng(center.getLat(), center.getLng() + 0.001);
+    const p2 = proj.pointFromCoords(offsetLng);
+    const pxDist = Math.abs(p2.x - p1.x);
+    const mDist = 111320 * Math.cos(center.getLat() * Math.PI / 180) * 0.001;
+    this.mPerPx = pxDist > 0 ? mDist / pxDist : 1;
+  },
+
+  latLngToPx(latlng) {
+    const proj = this.map.getProjection();
+    const mapPt = proj.pointFromCoords(latlng);
+    const centerPt = proj.pointFromCoords(this.map.getCenter());
+    const canvas = document.getElementById('overlay-canvas');
+    return {
+      x: canvas.width / 2 + (mapPt.x - centerPt.x),
+      y: canvas.height / 2 + (mapPt.y - centerPt.y)
+    };
+  },
+
+  canvasXY(e) {
+    const canvas = document.getElementById('overlay-canvas');
+    const rect = canvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  },
+
+  offsetLatLng(latlng, dxM, dyM) {
+    const lat = latlng.getLat() + (dyM / 111320);
+    const lng = latlng.getLng() + (dxM / (111320 * Math.cos(latlng.getLat() * Math.PI / 180)));
+    return new kakao.maps.LatLng(lat, lng);
+  }
+};
 </script>
 <script>
 // ── 7. 우측 패널 모듈 ─────────────────────────────────
@@ -211,11 +308,28 @@ const kepcoPanel = {};
 <script>
 // ── 8. UI 모듈 (진입점) ───────────────────────────────
 const ui = {
-  getState() { return {}; },
-  searchAddress() {},
-  init() {}
+  state: {
+    model: 'hanwha2',
+    wp: 500,
+    buildingW: 20,
+    buildingH: 30,
+    ridgeW: 0.5,
+    angle: 10,
+    forward: true,
+    spaced: true,
+  },
+  getState() { return this.state; },
+  updateResults(result) {
+    // filled in Task 5
+  },
+  searchAddress() {
+    // filled in Task 7
+  },
+  init() {
+    // filled in Task 6
+  }
 };
-kakao.maps.load(() => { mapCtrl.init && mapCtrl.init(); ui.init(); });
+kakao.maps.load(() => { mapCtrl.init(); ui.init(); });
 </script>
 </body>
 </html>
