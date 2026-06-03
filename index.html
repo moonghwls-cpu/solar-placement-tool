@@ -712,7 +712,26 @@ const ui = {
     document.getElementById('res-series').textContent = '직병렬: ' + series.solve(totalModules).text;
   },
   searchAddress() {
-    // filled in Task 7
+    const addr = document.getElementById('inp-addr').value.trim();
+    if (!addr) return;
+
+    const geocoder = new kakao.maps.services.Geocoder();
+    geocoder.addressSearch(addr, (result, status) => {
+      if (status === kakao.maps.services.Status.OK) {
+        const lat = parseFloat(result[0].y);
+        const lng = parseFloat(result[0].x);
+        const latlng = new kakao.maps.LatLng(lat, lng);
+        mapCtrl.map.setCenter(latlng);
+        mapCtrl.buildingLatLng = latlng;
+        mapCtrl.updateScale();
+        render.draw();
+
+        const addrObj = result[0].address;
+        kepcoPanel.update(addrObj, addr);
+      } else {
+        alert('주소를 찾을 수 없습니다: ' + addr);
+      }
+    });
   },
   init() {
   const s = this.state;
