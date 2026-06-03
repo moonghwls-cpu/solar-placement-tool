@@ -34,12 +34,15 @@ body { font-family: 'Segoe UI', sans-serif; font-size: 13px; background: #f0f0f0
   transition: all 0.15s;
 }
 .btn-toggle.active { background: #2ecc71; color: #000; border-color: #2ecc71; font-weight: 600; }
+.btn-toggle.move-active { background: #e67e22; color: #fff; border-color: #e67e22; font-weight: 600; }
 .result-pill {
   background: #2c3e50; border: 1px solid #4a6278; border-radius: 20px;
   padding: 3px 10px; font-size: 11px; color: #7fb3c8; white-space: nowrap;
 }
 .result-pill span { color: #fff; font-weight: 600; }
-#res-series { font-size: 11px; }
+.result-pill.cap { border-color: #2ecc71; }
+.result-pill.cap span { color: #2ecc71; }
+#res-series { font-size: 11px; color: #f1c40f; border-color: #6b5d1a; }
 .divider { width: 1px; height: 36px; background: #4a6278; margin: 0 2px; flex-shrink: 0; }
 
 /* 메인 영역 */
@@ -48,7 +51,16 @@ body { font-family: 'Segoe UI', sans-serif; font-size: 13px; background: #f0f0f0
 /* 지도 영역 */
 #map-wrap { position: relative; flex: 1; min-width: 0; overflow: hidden; }
 #map { width: 100%; height: 100%; }
-#overlay-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+/* 기본은 이벤트 통과(지도 패닝/줌 동작). 건물 이동 모드에서만 캔버스가 이벤트를 받음 */
+#overlay-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+#overlay-canvas.move-mode { pointer-events: auto; cursor: move; }
+#move-hint {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+  background: rgba(230,126,34,0.95); color: #fff; padding: 6px 14px;
+  border-radius: 20px; font-size: 12px; font-weight: 600; display: none;
+  z-index: 5; pointer-events: none; box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+#move-hint.show { display: block; }
 
 /* 우측 패널 */
 #right-panel {
@@ -141,13 +153,30 @@ hr.rp-hr { border: none; border-top: 1px solid #eee; margin: 8px 0; }
 
   <div class="divider"></div>
 
+  <div class="ctrl-group">
+    <label>지도</label>
+    <div class="ctrl-row">
+      <button class="btn-toggle active" id="btn-road">일반</button>
+      <button class="btn-toggle" id="btn-sat">위성</button>
+    </div>
+  </div>
+  <div class="ctrl-group">
+    <label>건물 위치</label>
+    <div class="ctrl-row">
+      <button class="btn-toggle" id="btn-move" title="켜면 건물을 드래그로 이동, 끄면 지도 이동">이동</button>
+      <button class="btn-toggle" id="btn-center" title="건물을 현재 지도 중심으로 이동">중심맞춤</button>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
   <div class="result-pill">L&nbsp;<span id="res-L">-</span>m</div>
   <div class="result-pill">Gap&nbsp;<span id="res-Gap">-</span>m</div>
   <div class="result-pill">Pitch&nbsp;<span id="res-Pitch">-</span>m</div>
   <div class="result-pill">남측이격&nbsp;<span id="res-south">-</span>m</div>
   <div class="result-pill">북측이격&nbsp;<span id="res-north">-</span>m</div>
   <div class="result-pill">모듈&nbsp;<span id="res-count">-</span>장</div>
-  <div class="result-pill">용량&nbsp;<span id="res-cap">-</span>kW</div>
+  <div class="result-pill cap">용량&nbsp;<span id="res-cap">-</span>kW</div>
   <div class="result-pill" id="res-series">직병렬: -</div>
 </div>
 
@@ -156,6 +185,7 @@ hr.rp-hr { border: none; border-top: 1px solid #eee; margin: 8px 0; }
   <div id="map-wrap">
     <div id="map"></div>
     <canvas id="overlay-canvas"></canvas>
+    <div id="move-hint">🟧 건물 이동 모드 — 건물을 드래그하세요 (지도 이동은 잠금)</div>
   </div>
   <div id="right-panel">
     <div class="search-wrap">
@@ -245,142 +275,130 @@ const LOCAL_DATA = {
 </script>
 <script>
 // ── 2. 계산 모듈 ──────────────────────────────────────
+// 좌표계: 미터 단위. 원점(0,0)=건물 남서(SW) 모서리. +X=동, +Y=북.
 const calc = {
   MODULE_SPECS: {
     hanwha2: { h: 2.464, w: 1.134 },
     hanwha4: { h: 2.382, w: 1.134 },
     trina:   { h: 2.382, w: 1.303 },
   },
-  GAP_X: 0.01,
-  OFFSET: 0.5,
+  GAP_X: 0.01,   // X축 모듈 간격(항상 10mm)
+  OFFSET: 0.5,   // 외벽 안쪽 이격(500mm) — 외벽에만 적용, 용마루 쪽엔 적용 안 함
 
+  // 경사각 → L, D, Gap, Pitch
   fromAngle(angleDeg) {
     const rad = angleDeg * Math.PI / 180;
-    const L = 2.465 * Math.cos(rad);
-    const D = 2.465 * Math.sin(rad) * 2.0;
-    const Gap = L + 0.01;
-    const Pitch = L + D;
+    const L = 2.465 * Math.cos(rad);       // 수평 투영 길이
+    const D = 2.465 * Math.sin(rad) * 2.0; // 그림자 이격 거리
+    const Gap = L + 0.01;                  // 밀착 배치 간격(투영길이+10mm)
+    const Pitch = L + D;                   // 표준 이격 배치 간격(투영길이+그림자)
     return { L, D, Gap, Pitch };
   },
 
-  availableNS(buildingH, ridgeW) {
-    return (buildingH / 2) - (ridgeW / 2) - this.OFFSET;
-  },
+  // 정방향: 한쪽 지붕(남 또는 북)의 가용 길이 — 용마루 반폭 + 외벽 이격 1개를 제외
+  availableNS(buildingH, ridgeW) { return (buildingH / 2) - (ridgeW / 2) - this.OFFSET; },
+  // 역방향: 한쪽 지붕(좌 또는 우)의 가용 폭
+  availableLR(buildingW, ridgeW) { return (buildingW / 2) - (ridgeW / 2) - this.OFFSET; },
+  // 역방향 세로 가용 길이 — 남/북 외벽 이격 2개 제외
+  availableVertical(buildingH) { return buildingH - 1.0; },
 
-  availableLR(buildingW, ridgeW) {
-    return (buildingW / 2) - (ridgeW / 2) - this.OFFSET;
-  },
-
-  availableVertical(buildingH) {
-    return buildingH - 1.0;
-  },
-
+  // 정방향 가로 열 수 (가로 가용폭 = 건물가로 - 1.0)
   cols(buildingW, moduleW) {
     const usable = buildingW - 1.0;
     return Math.max(0, Math.floor((usable + this.GAP_X) / (moduleW + this.GAP_X)));
   },
-
+  // 역방향 한쪽 지붕 열 수
   sideCols(buildingW, ridgeW, moduleW) {
     const usable = this.availableLR(buildingW, ridgeW);
     return Math.max(0, Math.floor((usable + this.GAP_X) / (moduleW + this.GAP_X)));
   },
 
-  southRows(avNS, Gap) {
-    return Gap > 0 ? Math.max(0, Math.floor(avNS / Gap)) : 0;
+  // 단순 단수(간격 step 기준)
+  rowsByStep(available, step) {
+    return step > 0 ? Math.max(0, Math.floor(available / step)) : 0;
   },
 
+  // 정방향 북측 단 구성: 표준은 Pitch, 4단 이상이면 마지막 Double Row 검사
+  // 반환: { rows, hasDouble, stdRows }
   northLayout(avNS, Gap, Pitch) {
     if (Pitch <= 0 || avNS <= 0) return { rows: 0, hasDouble: false, stdRows: 0 };
     const std = Math.floor(avNS / Pitch);
-    let rows = std;
-    let hasDouble = false;
+    let rows = std, hasDouble = false;
     if (std >= 4) {
       const remaining = avNS - std * Pitch;
-      if (remaining >= Gap) {
-        hasDouble = true;
-        rows = std + 1;
-      }
+      if (remaining >= Gap) { hasDouble = true; rows = std + 1; }
     }
     return { rows, hasDouble, stdRows: std };
   },
 
+  // 역방향 세로 단 구성: 표준 Pitch + 마지막 Double Row 검사
   verticalLayout(avV, Gap, Pitch) {
     if (Pitch <= 0 || avV <= 0) return { rows: 0, hasDouble: false, stdRows: 0 };
     const std = Math.floor(avV / Pitch);
-    let rows = std;
-    let hasDouble = false;
+    let rows = std, hasDouble = false;
     const remaining = avV - std * Pitch;
-    if (remaining >= Gap) {
-      hasDouble = true;
-      rows = std + 1;
-    }
+    if (remaining >= Gap) { hasDouble = true; rows = std + 1; }
     return { rows, hasDouble, stdRows: std };
+  },
+
+  // 모듈 배열의 Y방향 실사용 길이 = (북단 최대 far edge) - baseline. 실제 배치 기준.
+  usedLengthY(modules, baseline) {
+    if (!modules.length) return 0;
+    let maxFar = -Infinity;
+    for (const m of modules) maxFar = Math.max(maxFar, m.y + m.h);
+    return maxFar - baseline;
   }
 };
 </script>
 <script>
-// ── 3. 직병렬 최적화 모듈 ─────────────────────────────
+// ── 3. 직병렬 최적 균등 분배 모듈 ─────────────────────
+// 11X + 12Y + 13Z = total, 나머지 0.
+// 우선순위: 1)나머지0  2)직렬 종류 ≤2(2개 우선)  3)병렬 수 차 최소  4)총 병렬 수 과도하지 않음
 const series = {
   solve(total) {
     if (!total || total <= 0) return { text: '-' };
 
-    let best = null;
-    let bestDiff = Infinity;
-
-    const update = (combos) => {
-      const active = combos.filter(c => c.p > 0);
-      if (active.length === 0) return;
-      const vals = active.map(c => c.p);
-      const diff = Math.max(...vals) - Math.min(...vals);
-      if (diff < bestDiff) {
-        bestDiff = diff;
-        best = active;
-      }
+    const score = (combo) => {
+      const vals = combo.map(c => c.p);
+      return { diff: Math.max(...vals) - Math.min(...vals), sum: vals.reduce((a, b) => a + b, 0) };
+    };
+    // 더 좋은 조합인지(차 작고, 동률이면 총 병렬 적음)
+    const better = (a, b) => {
+      const sa = score(a), sb = score(b);
+      if (sa.diff !== sb.diff) return sa.diff < sb.diff;
+      return sa.sum < sb.sum;
     };
 
-    // 2-series combinations (preferred)
-    // 11 + 12
-    for (let x = 0; x * 11 <= total; x++) {
-      const rem = total - x * 11;
-      if (rem % 12 === 0) {
-        const y = rem / 12;
-        update([{s:11,p:x},{s:12,p:y}]);
-      }
-    }
-    // 11 + 13
-    for (let x = 0; x * 11 <= total; x++) {
-      const rem = total - x * 11;
-      if (rem % 13 === 0) {
-        const z = rem / 13;
-        update([{s:11,p:x},{s:13,p:z}]);
-      }
-    }
-    // 12 + 13
-    for (let y = 0; y * 12 <= total; y++) {
-      const rem = total - y * 12;
-      if (rem % 13 === 0) {
-        const z = rem / 13;
-        update([{s:12,p:y},{s:13,p:z}]);
+    const pool = [];
+    // 단일 직렬(종류 1개)
+    [11, 12, 13].forEach(s => { if (total % s === 0) pool.push([{ s, p: total / s }]); });
+    // 2개 직렬 조합
+    const pairs = [[11, 12], [11, 13], [12, 13]];
+    for (const [a, b] of pairs) {
+      for (let x = 1; x * a < total; x++) {
+        const rem = total - x * a;
+        if (rem > 0 && rem % b === 0) pool.push([{ s: a, p: x }, { s: b, p: rem / b }]);
       }
     }
 
-    // If no 2-series solution found, try 3-series
-    if (!best) {
-      for (let x = 0; x * 11 <= total; x++) {
-        for (let y = 0; x * 11 + y * 12 <= total; y++) {
+    let candidates = pool;
+    // ≤2 직렬로 불가능할 때만 3개 직렬 허용
+    if (candidates.length === 0) {
+      for (let x = 1; x * 11 < total; x++) {
+        for (let y = 1; x * 11 + y * 12 < total; y++) {
           const rem = total - x * 11 - y * 12;
-          if (rem >= 0 && rem % 13 === 0) {
-            const z = rem / 13;
-            update([{s:11,p:x},{s:12,p:y},{s:13,p:z}]);
-          }
+          if (rem > 0 && rem % 13 === 0) candidates.push([{ s: 11, p: x }, { s: 12, p: y }, { s: 13, p: rem / 13 }]);
         }
       }
     }
 
-    if (!best) return { text: '조합 없음' };
+    if (candidates.length === 0) return { text: '조합 없음' };
+
+    let best = candidates[0];
+    for (const c of candidates) if (better(c, best)) best = c;
 
     const text = best
-      .filter(b => b.p > 0)
+      .filter(b => b.p > 0)               // 병렬 0인 직렬은 표시 안 함
       .map(b => `${b.s}직렬 × ${b.p}병렬`)
       .join(' + ');
     return { combos: best, text };
@@ -389,140 +407,118 @@ const series = {
 </script>
 <script>
 // ── 4. 배치 계산 모듈 ─────────────────────────────────
+// 모든 모듈은 미터 좌표 {x, y, w, h}. x=서쪽 모서리, y=남쪽 모서리, h=투영길이 L.
 const placement = {
-  // Forward direction (정방향): horizontal ridge
+  // 정방향: 가로 용마루(건물을 남/북 지붕으로 반분)
   forward(state) {
     const spec = calc.MODULE_SPECS[state.model];
     const { Gap, Pitch, L } = calc.fromAngle(state.angle);
-    const mW = spec.w;
-    const mL = L; // projected height used for spacing
+    const mW = spec.w, mL = L;
 
     const avNS = calc.availableNS(state.buildingH, state.ridgeW);
     const numCols = calc.cols(state.buildingW, mW);
 
-    // South rows: tight placement (always Gap)
-    const sRows = calc.southRows(avNS, Gap);
-    // North layout
+    const ridgeSouthEdge = state.buildingH / 2 - state.ridgeW / 2; // 용마루 남쪽 경계
+    const ridgeNorthEdge = state.buildingH / 2 + state.ridgeW / 2; // 용마루 북쪽 경계
+
+    const south = [];
+    const north = [];
+
+    // X좌표(공통): 서측 외벽 0.5m 안쪽에서 시작, 남는 폭은 동쪽에만
+    const colX = (c) => calc.OFFSET + c * (mW + calc.GAP_X);
+
+    // ── 남쪽 지붕: 밀착(Gap). 최남단 500mm 선에 붙여 북쪽으로 ──
+    const sRows = calc.rowsByStep(avNS, Gap);
+    for (let r = 0; r < sRows; r++) {
+      const y = calc.OFFSET + r * Gap;
+      for (let c = 0; c < numCols; c++) south.push({ x: colX(c), y, w: mW, h: mL });
+    }
+
+    // ── 북쪽 지붕: 용마루 북쪽 경계에 붙여 북쪽으로 ──
     const nLayout = state.spaced
       ? calc.northLayout(avNS, Gap, Pitch)
-      : { rows: Math.floor(avNS / Gap), hasDouble: false, stdRows: Math.floor(avNS / Gap) };
-
-    const southModules = [];
-    const northModules = [];
-
-    // South: Y=0.5 (offset line) going northward, step = Gap
-    for (let r = 0; r < sRows; r++) {
-      for (let c = 0; c < numCols; c++) {
-        const x = calc.OFFSET + c * (mW + calc.GAP_X);
-        const y = calc.OFFSET + r * Gap;
-        southModules.push({ x, y, w: mW, h: mL });
-      }
-    }
-    const southUsed = sRows > 0 ? (sRows - 1) * Gap + mL : 0;
-
-    // North: modules placed from ridge southward (Y decreasing from ridge)
-    // Ridge south edge Y coordinate in building space
-    const ridgeSouthY = state.buildingH / 2 + state.ridgeW / 2;
-
-    const { rows: nRows, hasDouble: nHasDouble, stdRows: nStdRows } = nLayout;
+      : { rows: calc.rowsByStep(avNS, Gap), hasDouble: false, stdRows: calc.rowsByStep(avNS, Gap) };
+    const { rows: nRows, hasDouble: nDouble, stdRows: nStd } = nLayout;
+    const nStep = state.spaced ? Pitch : Gap;
 
     for (let r = 0; r < nRows; r++) {
-      let dy; // distance from ridge south edge downward
+      let dy; // 용마루 북쪽 경계로부터 북쪽 거리
       if (nRows <= 3) {
-        // 3 or fewer: tight Gap spacing
-        dy = r * Gap;
+        dy = r * Gap;                          // 3단 이하: 이격 없이 연속(Gap)
+      } else if (!nDouble || r < nStd) {
+        dy = r * nStep;                        // 표준 이격(Pitch)
       } else {
-        if (!nHasDouble || r < nStdRows) {
-          dy = r * (state.spaced ? Pitch : Gap);
-        } else {
-          // Double row: last module placed Gap after the last standard module
-          dy = (nStdRows - 1) * (state.spaced ? Pitch : Gap) + Gap;
-        }
+        dy = (nStd - 1) * nStep + Gap;         // 마지막 Double Row: 직전 표준 모듈에 10mm만 띄움
       }
-      for (let c = 0; c < numCols; c++) {
-        const x = calc.OFFSET + c * (mW + calc.GAP_X);
-        // North modules go from ridge downward (south), so y decreases
-        const y = ridgeSouthY - calc.OFFSET - dy - mL;
-        northModules.push({ x, y, w: mW, h: mL });
-      }
+      const y = ridgeNorthEdge + dy;
+      for (let c = 0; c < numCols; c++) north.push({ x: colX(c), y, w: mW, h: mL });
     }
 
-    let northUsed;
-    if (nRows === 0) {
-      northUsed = 0;
-    } else if (nRows <= 3) {
-      northUsed = (nRows - 1) * Gap + mL;
-    } else if (nHasDouble) {
-      northUsed = (nStdRows - 1) * (state.spaced ? Pitch : Gap) + Gap + mL;
-    } else {
-      northUsed = (nRows - 1) * (state.spaced ? Pitch : Gap) + mL;
-    }
+    // 실제 배치 기준 이격(소수 셋째 자리 표시는 UI에서)
+    const southUsed = calc.usedLengthY(south, calc.OFFSET);
+    const northUsed = calc.usedLengthY(north, ridgeNorthEdge);
+    const southGap = Math.max(0, avNS - southUsed);
+    const northGap = Math.max(0, avNS - northUsed);
 
     return {
-      southModules, northModules,
-      southRows: sRows, northRows: nRows,
-      southUsed, northUsed,
-      cols: numCols, avNS
+      mode: 'forward',
+      modules: south.concat(north), south, north,
+      cols: numCols, southRows: sRows, northRows: nRows,
+      avNS, southGap, northGap,
+      total: south.length + north.length,
+      ridgeSouthEdge, ridgeNorthEdge,
     };
   },
 
-  // Reverse direction (역방향): vertical ridge
+  // 역방향: 세로 용마루(건물을 좌/우 지붕으로 반분), 좌우 완전 대칭
   reverse(state) {
     const spec = calc.MODULE_SPECS[state.model];
     const { Gap, Pitch, L } = calc.fromAngle(state.angle);
-    const mW = spec.w;
-    const mL = L;
+    const mW = spec.w, mL = L;
 
     const avV = calc.availableVertical(state.buildingH);
     const numSideCols = calc.sideCols(state.buildingW, state.ridgeW, mW);
+
     const vLayout = state.spaced
       ? calc.verticalLayout(avV, Gap, Pitch)
-      : { rows: Math.floor(avV / Gap), hasDouble: false, stdRows: Math.floor(avV / Gap) };
-
+      : { rows: calc.rowsByStep(avV, Gap), hasDouble: false, stdRows: calc.rowsByStep(avV, Gap) };
     const { rows, hasDouble, stdRows } = vLayout;
     const yStep = state.spaced ? Pitch : Gap;
 
-    const ridgeCenterX = state.buildingW / 2;
-    const ridgeLeftX = ridgeCenterX - state.ridgeW / 2;
-    const ridgeRightX = ridgeCenterX + state.ridgeW / 2;
+    const ridgeLeftX = state.buildingW / 2 - state.ridgeW / 2;  // 용마루 좌측 경계
+    const ridgeRightX = state.buildingW / 2 + state.ridgeW / 2; // 용마루 우측 경계
 
-    const leftModules = [];
-    const rightModules = [];
+    const left = [];
+    const right = [];
 
     for (let r = 0; r < rows; r++) {
       let dy;
-      if (!hasDouble || r < stdRows) {
-        dy = r * yStep;
-      } else {
-        dy = (stdRows - 1) * yStep + Gap;
-      }
-      const y = calc.OFFSET + dy;
+      if (!hasDouble || r < stdRows) dy = r * yStep;
+      else dy = (stdRows - 1) * yStep + Gap;     // 마지막 Double Row
+      const y = calc.OFFSET + dy;                // 최남단 500mm 선에 붙여 북쪽으로
 
-      // Left side: from ridgeLeftX going left (x decreasing)
+      // 좌측: 용마루 좌측 경계에 붙여 서쪽으로. 남는 폭은 좌측 외벽에.
       for (let c = 0; c < numSideCols; c++) {
-        const x = ridgeLeftX - calc.OFFSET - (c + 1) * mW - c * calc.GAP_X;
-        leftModules.push({ x, y, w: mW, h: mL });
+        const x = ridgeLeftX - (c + 1) * mW - c * calc.GAP_X;
+        left.push({ x, y, w: mW, h: mL });
       }
-      // Right side: from ridgeRightX going right (x increasing)
+      // 우측: 용마루 우측 경계에 붙여 동쪽으로 (좌측과 대칭)
       for (let c = 0; c < numSideCols; c++) {
-        const x = ridgeRightX + calc.OFFSET + c * (mW + calc.GAP_X);
-        rightModules.push({ x, y, w: mW, h: mL });
+        const x = ridgeRightX + c * (mW + calc.GAP_X);
+        right.push({ x, y, w: mW, h: mL });
       }
     }
 
-    let usedV;
-    if (rows === 0) {
-      usedV = 0;
-    } else if (hasDouble) {
-      usedV = (stdRows - 1) * yStep + Gap + mL;
-    } else {
-      usedV = (rows - 1) * yStep + mL;
-    }
+    const used = calc.usedLengthY(left.concat(right), calc.OFFSET);
+    const gap = Math.max(0, avV - used);
 
     return {
-      leftModules, rightModules,
-      rows, sideCols: numSideCols,
-      usedV, avV
+      mode: 'reverse',
+      modules: left.concat(right), left, right,
+      sideCols: numSideCols, rows,
+      avV, southGap: gap, northGap: gap,
+      total: left.length + right.length,
+      ridgeLeftX, ridgeRightX,
     };
   }
 };
@@ -534,92 +530,94 @@ const render = {
     const canvas = document.getElementById('overlay-canvas');
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
     if (!mapCtrl.map) return;
 
     const st = ui.getState();
-    const mpp = mapCtrl.mPerPx; // meters per pixel
+    const mpp = mapCtrl.mPerPx;
     const bCenter = mapCtrl.latLngToPx(mapCtrl.buildingLatLng);
 
-    // Convert building-local meter coords to canvas pixels
-    // Building origin (0,0) = SW corner; canvas Y is inverted (down = +)
-    const toCanvasX = (mx) => bCenter.x + (mx - st.buildingW / 2) / mpp;
-    const toCanvasY = (my) => bCenter.y + (st.buildingH / 2 - my) / mpp;
+    // 미터(건물 로컬) → 캔버스 픽셀. 캔버스 Y는 아래가 +이므로 북(+Y)은 위로 반전.
+    const tx = (mx) => bCenter.x + (mx - st.buildingW / 2) / mpp;
+    const ty = (my) => bCenter.y + (st.buildingH / 2 - my) / mpp;
     const px = (m) => m / mpp;
 
-    // 1. Building outline (purple)
+    // 1) 건물 외곽선(자주색)
     ctx.strokeStyle = '#8B008B';
     ctx.lineWidth = 2;
     ctx.setLineDash([]);
-    ctx.strokeRect(
-      toCanvasX(0),
-      toCanvasY(st.buildingH),
-      px(st.buildingW),
-      px(st.buildingH)
-    );
+    ctx.strokeRect(tx(0), ty(st.buildingH), px(st.buildingW), px(st.buildingH));
 
-    // 2. 500mm offset red dashed line
+    // 2) 500mm 외벽 이격 빨간 점선
     const off = calc.OFFSET;
     ctx.strokeStyle = '#ff0000';
     ctx.lineWidth = 1;
     ctx.setLineDash([6, 4]);
-    ctx.strokeRect(
-      toCanvasX(off),
-      toCanvasY(st.buildingH - off),
-      px(st.buildingW - off * 2),
-      px(st.buildingH - off * 2)
-    );
+    ctx.strokeRect(tx(off), ty(st.buildingH - off), px(st.buildingW - off * 2), px(st.buildingH - off * 2));
     ctx.setLineDash([]);
 
-    // 3. Ridge (gray band)
-    ctx.fillStyle = '#999999';
+    // 3) 용마루(회색 띠)
+    ctx.fillStyle = '#9a9a9a';
     if (st.forward) {
-      // Horizontal ridge at vertical center
-      const ridgeMidY = st.buildingH / 2;
-      ctx.fillRect(
-        toCanvasX(0),
-        toCanvasY(ridgeMidY + st.ridgeW / 2),
-        px(st.buildingW),
-        px(st.ridgeW)
-      );
+      ctx.fillRect(tx(0), ty(st.buildingH / 2 + st.ridgeW / 2), px(st.buildingW), px(st.ridgeW));
     } else {
-      // Vertical ridge at horizontal center
-      const ridgeMidX = st.buildingW / 2;
-      ctx.fillRect(
-        toCanvasX(ridgeMidX - st.ridgeW / 2),
-        toCanvasY(st.buildingH),
-        px(st.ridgeW),
-        px(st.buildingH)
-      );
+      ctx.fillRect(tx(st.buildingW / 2 - st.ridgeW / 2), ty(st.buildingH), px(st.ridgeW), px(st.buildingH));
     }
 
-    // 4. Modules
+    // 4) 모듈(밝은 하늘색 채움 + 0.002m 빨간 테두리, 방향 무관 동일색)
+    const result = st.forward ? placement.forward(st) : placement.reverse(st);
     const borderPx = Math.max(1, px(0.002));
-
-    const drawModules = (modules) => {
-      modules.forEach(m => {
-        ctx.fillStyle = '#87CEEB';
-        ctx.fillRect(toCanvasX(m.x), toCanvasY(m.y + m.h), px(m.w), px(m.h));
-        ctx.strokeStyle = '#ff0000';
-        ctx.lineWidth = borderPx;
-        ctx.setLineDash([]);
-        ctx.strokeRect(toCanvasX(m.x), toCanvasY(m.y + m.h), px(m.w), px(m.h));
-      });
-    };
-
-    let result;
-    if (st.forward) {
-      result = placement.forward(st);
-      drawModules(result.southModules);
-      drawModules(result.northModules);
-    } else {
-      result = placement.reverse(st);
-      drawModules(result.leftModules);
-      drawModules(result.rightModules);
+    ctx.setLineDash([]);
+    for (const m of result.modules) {
+      const X = tx(m.x), Y = ty(m.y + m.h), W = px(m.w), H = px(m.h);
+      ctx.fillStyle = '#87CEEB';
+      ctx.fillRect(X, Y, W, H);
+      ctx.strokeStyle = '#ff0000';
+      ctx.lineWidth = borderPx;
+      ctx.strokeRect(X, Y, W, H);
     }
 
-    // 5. Update top panel
+    // 5) 방위/치수/영역 라벨
+    this.drawLabels(ctx, st, tx, ty, px);
+
+    // 6) 상단 패널 갱신
     ui.updateResults(result);
+  },
+
+  drawLabels(ctx, st, tx, ty, px) {
+    ctx.save();
+    ctx.fillStyle = '#8B008B';
+    ctx.font = 'bold 12px Segoe UI';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // 가로 치수(북측 외곽 위)
+    ctx.fillText(st.buildingW.toFixed(1) + ' m', tx(st.buildingW / 2), ty(st.buildingH) - 12);
+    // 세로 치수(서측 외곽 좌측, 세로쓰기)
+    ctx.save();
+    ctx.translate(tx(0) - 14, ty(st.buildingH / 2));
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText(st.buildingH.toFixed(1) + ' m', 0, 0);
+    ctx.restore();
+
+    // 방위 표시(N) — 건물 북동쪽 바깥
+    const nx = tx(st.buildingW) + 22, ny = ty(st.buildingH) + 4;
+    ctx.fillStyle = '#c0392b';
+    ctx.beginPath();
+    ctx.moveTo(nx, ny - 12); ctx.lineTo(nx - 5, ny + 2); ctx.lineTo(nx + 5, ny + 2);
+    ctx.closePath(); ctx.fill();
+    ctx.fillText('N', nx, ny + 12);
+
+    // 영역 라벨(연회색)
+    ctx.fillStyle = 'rgba(120,120,120,0.85)';
+    ctx.font = 'bold 13px Segoe UI';
+    if (st.forward) {
+      ctx.fillText('북측', tx(st.buildingW / 2), ty(st.buildingH * 0.78));
+      ctx.fillText('남측', tx(st.buildingW / 2), ty(st.buildingH * 0.22));
+    } else {
+      ctx.fillText('좌측', tx(st.buildingW * 0.25), ty(st.buildingH * 0.9));
+      ctx.fillText('우측', tx(st.buildingW * 0.75), ty(st.buildingH * 0.9));
+    }
+    ctx.restore();
   }
 };
 </script>
@@ -629,57 +627,72 @@ const mapCtrl = {
   map: null,
   mPerPx: 1,
   buildingLatLng: null,
+  moveMode: false,
 
   init() {
     const container = document.getElementById('map');
-    const options = {
+    this.map = new kakao.maps.Map(container, {
       center: new kakao.maps.LatLng(37.5665, 126.9780),
-      level: 3
-    };
-    this.map = new kakao.maps.Map(container, options);
-    this.buildingLatLng = options.center;
+      level: 3,
+    });
+    this.buildingLatLng = this.map.getCenter();
     this.resizeCanvas();
     this.updateScale();
 
-    kakao.maps.event.addListener(this.map, 'zoom_changed', () => {
-      this.updateScale(); render.draw && render.draw();
-    });
-    kakao.maps.event.addListener(this.map, 'center_changed', () => {
-      render.draw && render.draw();
-    });
-    window.addEventListener('resize', () => {
-      this.resizeCanvas(); this.updateScale(); render.draw && render.draw();
-    });
+    kakao.maps.event.addListener(this.map, 'zoom_changed', () => { this.updateScale(); render.draw(); });
+    kakao.maps.event.addListener(this.map, 'center_changed', () => { render.draw(); });
+    kakao.maps.event.addListener(this.map, 'bounds_changed', () => { this.updateScale(); render.draw(); });
+    window.addEventListener('resize', () => { this.resizeCanvas(); this.updateScale(); render.draw(); });
 
+    this.setupDrag();
+  },
+
+  // 건물 이동 모드에서만 캔버스가 드래그를 받아 건물 위치(위경도)를 이동
+  setupDrag() {
     const canvas = document.getElementById('overlay-canvas');
-    canvas.style.pointerEvents = 'auto';
-    let dragging = false;
-    let dragStartPx = null;
-    let dragStartLatLng = null;
+    let dragging = false, startPx = null, startLatLng = null;
 
     canvas.addEventListener('mousedown', (e) => {
+      if (!this.moveMode) return;
       const st = ui.getState();
-      const px = this.canvasXY(e);
+      const p = this.canvasXY(e);
       const bpx = this.latLngToPx(this.buildingLatLng);
       const halfW = (st.buildingW / 2) / this.mPerPx;
       const halfH = (st.buildingH / 2) / this.mPerPx;
-      if (Math.abs(px.x - bpx.x) < halfW && Math.abs(px.y - bpx.y) < halfH) {
-        dragging = true;
-        dragStartPx = px;
-        dragStartLatLng = this.buildingLatLng;
-        e.preventDefault();
+      if (Math.abs(p.x - bpx.x) <= halfW && Math.abs(p.y - bpx.y) <= halfH) {
+        dragging = true; startPx = p; startLatLng = this.buildingLatLng; e.preventDefault();
       }
     });
     canvas.addEventListener('mousemove', (e) => {
       if (!dragging) return;
-      const px = this.canvasXY(e);
-      const dx = (px.x - dragStartPx.x) * this.mPerPx;
-      const dy = (px.y - dragStartPx.y) * this.mPerPx;
-      this.buildingLatLng = this.offsetLatLng(dragStartLatLng, dx, -dy);
-      render.draw && render.draw();
+      const p = this.canvasXY(e);
+      const dxM = (p.x - startPx.x) * this.mPerPx;
+      const dyM = (p.y - startPx.y) * this.mPerPx;
+      this.buildingLatLng = this.offsetLatLng(startLatLng, dxM, -dyM); // 화면 아래(+dy)=남(-위도)
+      render.draw();
     });
-    canvas.addEventListener('mouseup', () => { dragging = false; });
-    canvas.addEventListener('mouseleave', () => { dragging = false; });
+    const end = () => { dragging = false; };
+    canvas.addEventListener('mouseup', end);
+    canvas.addEventListener('mouseleave', end);
+  },
+
+  setMoveMode(on) {
+    this.moveMode = on;
+    const canvas = document.getElementById('overlay-canvas');
+    const hint = document.getElementById('move-hint');
+    canvas.classList.toggle('move-mode', on);
+    hint.classList.toggle('show', on);
+  },
+
+  setMapType(type) {
+    // 'road' | 'sat'
+    if (type === 'sat') this.map.setMapTypeId(kakao.maps.MapTypeId.HYBRID);
+    else this.map.setMapTypeId(kakao.maps.MapTypeId.ROADMAP);
+  },
+
+  centerBuilding() {
+    this.buildingLatLng = this.map.getCenter();
+    render.draw();
   },
 
   resizeCanvas() {
@@ -693,8 +706,7 @@ const mapCtrl = {
     const proj = this.map.getProjection();
     const center = this.map.getCenter();
     const p1 = proj.pointFromCoords(center);
-    const offsetLng = new kakao.maps.LatLng(center.getLat(), center.getLng() + 0.001);
-    const p2 = proj.pointFromCoords(offsetLng);
+    const p2 = proj.pointFromCoords(new kakao.maps.LatLng(center.getLat(), center.getLng() + 0.001));
     const pxDist = Math.abs(p2.x - p1.x);
     const mDist = 111320 * Math.cos(center.getLat() * Math.PI / 180) * 0.001;
     this.mPerPx = pxDist > 0 ? mDist / pxDist : 1;
@@ -705,15 +717,11 @@ const mapCtrl = {
     const mapPt = proj.pointFromCoords(latlng);
     const centerPt = proj.pointFromCoords(this.map.getCenter());
     const canvas = document.getElementById('overlay-canvas');
-    return {
-      x: canvas.width / 2 + (mapPt.x - centerPt.x),
-      y: canvas.height / 2 + (mapPt.y - centerPt.y)
-    };
+    return { x: canvas.width / 2 + (mapPt.x - centerPt.x), y: canvas.height / 2 + (mapPt.y - centerPt.y) };
   },
 
   canvasXY(e) {
-    const canvas = document.getElementById('overlay-canvas');
-    const rect = canvas.getBoundingClientRect();
+    const rect = document.getElementById('overlay-canvas').getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   },
 
@@ -728,9 +736,7 @@ const mapCtrl = {
 // ── 7. 우측 패널 모듈 ─────────────────────────────────
 const kepcoPanel = {
   update(addrObj, rawAddr) {
-    // Parse province and district
-    let province = '';
-    let district = '';
+    let province = '', district = '';
     if (addrObj && addrObj.region_1depth_name) {
       province = addrObj.region_1depth_name || '';
       district = addrObj.region_2depth_name || '';
@@ -740,12 +746,10 @@ const kepcoPanel = {
       district = parts[1] || '';
     }
 
-    // Match province key
     const provKey = Object.keys(KEPCO_DATA).find(k => province.includes(k)) || '';
     const kepco = KEPCO_DATA[provKey];
     const local = LOCAL_DATA[provKey];
 
-    // KEPCO panel
     const kepcoDiv = document.getElementById('rp-kepco');
     if (kepco) {
       const subKey = Object.keys(kepco.regions || {}).find(k => district.includes(k));
@@ -753,7 +757,7 @@ const kepcoPanel = {
       kepcoDiv.innerHTML = `
         <h3>KEPCO 담당자</h3>
         <h4>${kepco.office}</h4>
-        <div class="contact-item"><strong>부서:</strong> ${kepco.dept}</div>
+        <div class="contact-item"><strong>부서:</strong> ${kepco.dept} (신증설 설계·시공)</div>
         <div class="contact-item"><strong>대표:</strong> <a href="tel:${kepco.tel}">${kepco.tel}</a></div>
         <div class="contact-item"><strong>주소:</strong> ${kepco.address}</div>
         ${sub ? `
@@ -762,12 +766,12 @@ const kepcoPanel = {
           <div class="contact-item"><strong>전화:</strong> <a href="tel:${sub.tel}">${sub.tel}</a></div>
           <div class="contact-item"><strong>담당:</strong> ${sub.manager}</div>
         ` : ''}
+        <div class="contact-item" style="margin-top:6px;color:#999;">※ 선로 여유 용량은 아래 ‘선로 여유 용량 조회’ 링크에서 해당 주소로 확인하세요.</div>
       `;
     } else {
       kepcoDiv.innerHTML = `<h3>KEPCO 담당자</h3><p class="no-data">해당 지역 데이터 없음. 아래 링크에서 확인하세요.</p>`;
     }
 
-    // Local government panel
     const localDiv = document.getElementById('rp-local');
     if (local) {
       const subKey = Object.keys(local.regions || {}).find(k => district.includes(k));
@@ -794,131 +798,99 @@ const kepcoPanel = {
 // ── 8. UI 모듈 (진입점) ───────────────────────────────
 const ui = {
   state: {
-    model: 'hanwha2',
-    wp: 500,
-    buildingW: 20,
-    buildingH: 30,
-    ridgeW: 0.5,
-    angle: 10,
-    forward: true,
-    spaced: true,
+    model: 'hanwha2', wp: 500,
+    buildingW: 20, buildingH: 30, ridgeW: 0.5,
+    angle: 10, forward: true, spaced: true,
   },
   getState() { return this.state; },
+
   updateResults(result) {
     const st = this.state;
     const { L, Gap, Pitch } = calc.fromAngle(st.angle);
+    const $ = (id) => document.getElementById(id);
 
-    document.getElementById('res-L').textContent = L.toFixed(3);
-    document.getElementById('res-Gap').textContent = Gap.toFixed(3);
-    document.getElementById('res-Pitch').textContent = Pitch.toFixed(3);
+    $('res-L').textContent = L.toFixed(3);
+    $('res-Gap').textContent = Gap.toFixed(3);
+    $('res-Pitch').textContent = Pitch.toFixed(3);
 
-    let totalModules = 0;
-    let southGap = 0;
-    let northGap = 0;
-
-    if (st.forward) {
-      totalModules = result.cols * (result.southRows + result.northRows);
-      southGap = Math.max(0, result.avNS - result.southUsed);
-      northGap = Math.max(0, result.avNS - result.northUsed);
-    } else {
-      totalModules = result.sideCols * result.rows * 2;
-      southGap = Math.max(0, result.avV - result.usedV);
-      northGap = southGap;
-    }
-
-    document.getElementById('res-south').textContent = southGap.toFixed(3);
-    document.getElementById('res-north').textContent = northGap.toFixed(3);
-    document.getElementById('res-count').textContent = totalModules;
-    document.getElementById('res-cap').textContent = (totalModules * st.wp / 1000).toFixed(3);
-    document.getElementById('res-series').textContent = '직병렬: ' + series.solve(totalModules).text;
+    // 실제 렌더링된 모듈 기준 집계
+    $('res-south').textContent = result.southGap.toFixed(3);
+    $('res-north').textContent = result.northGap.toFixed(3);
+    $('res-count').textContent = result.total;
+    $('res-cap').textContent = (result.total * st.wp / 1000).toFixed(3);
+    $('res-series').textContent = '직병렬: ' + series.solve(result.total).text;
   },
+
   searchAddress() {
     const addr = document.getElementById('inp-addr').value.trim();
     if (!addr) return;
-
     const geocoder = new kakao.maps.services.Geocoder();
     geocoder.addressSearch(addr, (result, status) => {
       if (status === kakao.maps.services.Status.OK) {
-        const lat = parseFloat(result[0].y);
-        const lng = parseFloat(result[0].x);
-        const latlng = new kakao.maps.LatLng(lat, lng);
+        const latlng = new kakao.maps.LatLng(parseFloat(result[0].y), parseFloat(result[0].x));
         mapCtrl.map.setCenter(latlng);
         mapCtrl.buildingLatLng = latlng;
         mapCtrl.updateScale();
         render.draw();
-
-        const addrObj = result[0].address;
-        kepcoPanel.update(addrObj, addr);
+        kepcoPanel.update(result[0].address, addr);
       } else {
         alert('주소를 찾을 수 없습니다: ' + addr);
       }
     });
   },
+
+  // 두 토글 버튼(A/B) 묶음 처리 헬퍼
+  bindToggle(idA, idB, onA, onB) {
+    const a = document.getElementById(idA), b = document.getElementById(idB);
+    a.addEventListener('click', () => { a.classList.add('active'); b.classList.remove('active'); onA(); render.draw(); });
+    b.addEventListener('click', () => { b.classList.add('active'); a.classList.remove('active'); onB(); render.draw(); });
+  },
+
+  bindNumber(id, key, fallback) {
+    document.getElementById(id).addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      this.state[key] = (v > 0) ? v : fallback;
+      render.draw();
+    });
+  },
+
   init() {
-  const s = this.state;
-  const redraw = () => render.draw();
+    const s = this.state;
 
-  document.getElementById('sel-model').addEventListener('change', (e) => {
-    s.model = e.target.value; redraw();
-  });
-  document.getElementById('inp-wp').addEventListener('input', (e) => {
-    const v = parseFloat(e.target.value);
-    if (v > 0) { s.wp = v; redraw(); }
-  });
-  document.getElementById('inp-bw').addEventListener('input', (e) => {
-    const v = parseFloat(e.target.value);
-    if (v > 0) { s.buildingW = v; redraw(); }
-  });
-  document.getElementById('inp-bh').addEventListener('input', (e) => {
-    const v = parseFloat(e.target.value);
-    if (v > 0) { s.buildingH = v; redraw(); }
-  });
-  document.getElementById('inp-ridge').addEventListener('input', (e) => {
-    const v = parseFloat(e.target.value);
-    if (v > 0) { s.ridgeW = v; redraw(); }
-  });
-  document.getElementById('sl-angle').addEventListener('input', (e) => {
-    s.angle = parseFloat(e.target.value);
-    document.getElementById('lbl-angle').textContent = s.angle;
-    redraw();
-  });
+    document.getElementById('sel-model').addEventListener('change', (e) => { s.model = e.target.value; render.draw(); });
+    this.bindNumber('inp-wp', 'wp', 500);
+    this.bindNumber('inp-bw', 'buildingW', 20);
+    this.bindNumber('inp-bh', 'buildingH', 30);
+    this.bindNumber('inp-ridge', 'ridgeW', 0.5);
 
-  document.getElementById('btn-forward').addEventListener('click', () => {
-    s.forward = true;
-    document.getElementById('btn-forward').classList.add('active');
-    document.getElementById('btn-reverse').classList.remove('active');
-    redraw();
-  });
-  document.getElementById('btn-reverse').addEventListener('click', () => {
-    s.forward = false;
-    document.getElementById('btn-reverse').classList.add('active');
-    document.getElementById('btn-forward').classList.remove('active');
-    redraw();
-  });
-  document.getElementById('btn-tight').addEventListener('click', () => {
-    s.spaced = false;
-    document.getElementById('btn-tight').classList.add('active');
-    document.getElementById('btn-spaced').classList.remove('active');
-    redraw();
-  });
-  document.getElementById('btn-spaced').addEventListener('click', () => {
-    s.spaced = true;
-    document.getElementById('btn-spaced').classList.add('active');
-    document.getElementById('btn-tight').classList.remove('active');
-    redraw();
-  });
+    document.getElementById('sl-angle').addEventListener('input', (e) => {
+      s.angle = parseFloat(e.target.value);
+      document.getElementById('lbl-angle').textContent = s.angle;
+      render.draw();
+    });
 
-  document.getElementById('inp-addr').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') this.searchAddress();
-  });
+    this.bindToggle('btn-forward', 'btn-reverse', () => s.forward = true, () => s.forward = false);
+    this.bindToggle('btn-tight', 'btn-spaced', () => s.spaced = false, () => s.spaced = true);
+    this.bindToggle('btn-road', 'btn-sat', () => mapCtrl.setMapType('road'), () => mapCtrl.setMapType('sat'));
 
-  redraw();
-},
+    // 건물 이동 모드 토글(독립)
+    const btnMove = document.getElementById('btn-move');
+    btnMove.addEventListener('click', () => {
+      const on = !mapCtrl.moveMode;
+      mapCtrl.setMoveMode(on);
+      btnMove.classList.toggle('move-active', on);
+    });
+    document.getElementById('btn-center').addEventListener('click', () => mapCtrl.centerBuilding());
+
+    document.getElementById('inp-addr').addEventListener('keydown', (e) => { if (e.key === 'Enter') this.searchAddress(); });
+
+    render.draw();
+  }
 };
-kakao.maps.load(() => { mapCtrl.init(); ui.init(); });
 
+kakao.maps.load(() => { mapCtrl.init(); ui.init(); });
 window.addEventListener('load', () => {
-  setTimeout(() => { mapCtrl.resizeCanvas && mapCtrl.resizeCanvas(); render.draw && render.draw(); }, 100);
+  setTimeout(() => { if (mapCtrl.map) { mapCtrl.resizeCanvas(); mapCtrl.updateScale(); render.draw(); } }, 150);
 });
 </script>
 </body>
