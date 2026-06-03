@@ -330,7 +330,143 @@ const series = {
 </script>
 <script>
 // ── 4. 배치 계산 모듈 ─────────────────────────────────
-const placement = {};
+const placement = {
+  // Forward direction (정방향): horizontal ridge
+  forward(state) {
+    const spec = calc.MODULE_SPECS[state.model];
+    const { Gap, Pitch, L } = calc.fromAngle(state.angle);
+    const mW = spec.w;
+    const mL = L; // projected height used for spacing
+
+    const avNS = calc.availableNS(state.buildingH, state.ridgeW);
+    const numCols = calc.cols(state.buildingW, mW);
+
+    // South rows: tight placement (always Gap)
+    const sRows = calc.southRows(avNS, Gap);
+    // North layout
+    const nLayout = state.spaced
+      ? calc.northLayout(avNS, Gap, Pitch)
+      : { rows: Math.floor(avNS / Gap), hasDouble: false, stdRows: Math.floor(avNS / Gap) };
+
+    const southModules = [];
+    const northModules = [];
+
+    // South: Y=0.5 (offset line) going northward, step = Gap
+    for (let r = 0; r < sRows; r++) {
+      for (let c = 0; c < numCols; c++) {
+        const x = calc.OFFSET + c * (mW + calc.GAP_X);
+        const y = calc.OFFSET + r * Gap;
+        southModules.push({ x, y, w: mW, h: mL });
+      }
+    }
+    const southUsed = sRows > 0 ? (sRows - 1) * Gap + mL : 0;
+
+    // North: modules placed from ridge southward (Y decreasing from ridge)
+    // Ridge south edge Y coordinate in building space
+    const ridgeSouthY = state.buildingH / 2 + state.ridgeW / 2;
+
+    const { rows: nRows, hasDouble: nHasDouble, stdRows: nStdRows } = nLayout;
+
+    for (let r = 0; r < nRows; r++) {
+      let dy; // distance from ridge south edge downward
+      if (nRows <= 3) {
+        // 3 or fewer: tight Gap spacing
+        dy = r * Gap;
+      } else {
+        if (!nHasDouble || r < nStdRows) {
+          dy = r * (state.spaced ? Pitch : Gap);
+        } else {
+          // Double row: last module placed Gap after the last standard module
+          dy = (nStdRows - 1) * (state.spaced ? Pitch : Gap) + Gap;
+        }
+      }
+      for (let c = 0; c < numCols; c++) {
+        const x = calc.OFFSET + c * (mW + calc.GAP_X);
+        // North modules go from ridge downward (south), so y decreases
+        const y = ridgeSouthY - calc.OFFSET - dy - mL;
+        northModules.push({ x, y, w: mW, h: mL });
+      }
+    }
+
+    let northUsed;
+    if (nRows === 0) {
+      northUsed = 0;
+    } else if (nRows <= 3) {
+      northUsed = (nRows - 1) * Gap + mL;
+    } else if (nHasDouble) {
+      northUsed = (nStdRows - 1) * (state.spaced ? Pitch : Gap) + Gap + mL;
+    } else {
+      northUsed = (nRows - 1) * (state.spaced ? Pitch : Gap) + mL;
+    }
+
+    return {
+      southModules, northModules,
+      southRows: sRows, northRows: nRows,
+      southUsed, northUsed,
+      cols: numCols, avNS
+    };
+  },
+
+  // Reverse direction (역방향): vertical ridge
+  reverse(state) {
+    const spec = calc.MODULE_SPECS[state.model];
+    const { Gap, Pitch, L } = calc.fromAngle(state.angle);
+    const mW = spec.w;
+    const mL = L;
+
+    const avV = calc.availableVertical(state.buildingH);
+    const numSideCols = calc.sideCols(state.buildingW, state.ridgeW, mW);
+    const vLayout = state.spaced
+      ? calc.verticalLayout(avV, Gap, Pitch)
+      : { rows: Math.floor(avV / Gap), hasDouble: false, stdRows: Math.floor(avV / Gap) };
+
+    const { rows, hasDouble, stdRows } = vLayout;
+    const yStep = state.spaced ? Pitch : Gap;
+
+    const ridgeCenterX = state.buildingW / 2;
+    const ridgeLeftX = ridgeCenterX - state.ridgeW / 2;
+    const ridgeRightX = ridgeCenterX + state.ridgeW / 2;
+
+    const leftModules = [];
+    const rightModules = [];
+
+    for (let r = 0; r < rows; r++) {
+      let dy;
+      if (!hasDouble || r < stdRows) {
+        dy = r * yStep;
+      } else {
+        dy = (stdRows - 1) * yStep + Gap;
+      }
+      const y = calc.OFFSET + dy;
+
+      // Left side: from ridgeLeftX going left (x decreasing)
+      for (let c = 0; c < numSideCols; c++) {
+        const x = ridgeLeftX - calc.OFFSET - (c + 1) * mW - c * calc.GAP_X;
+        leftModules.push({ x, y, w: mW, h: mL });
+      }
+      // Right side: from ridgeRightX going right (x increasing)
+      for (let c = 0; c < numSideCols; c++) {
+        const x = ridgeRightX + calc.OFFSET + c * (mW + calc.GAP_X);
+        rightModules.push({ x, y, w: mW, h: mL });
+      }
+    }
+
+    let usedV;
+    if (rows === 0) {
+      usedV = 0;
+    } else if (hasDouble) {
+      usedV = (stdRows - 1) * yStep + Gap + mL;
+    } else {
+      usedV = (rows - 1) * yStep + mL;
+    }
+
+    return {
+      leftModules, rightModules,
+      rows, sideCols: numSideCols,
+      usedV, avV
+    };
+  }
+};
 </script>
 <script>
 // ── 5. 렌더링 모듈 ────────────────────────────────────
