@@ -46,9 +46,9 @@ body { font-family: 'Segoe UI', sans-serif; font-size: 13px; background: #f0f0f0
 #main { display: flex; flex: 1; overflow: hidden; min-height: 0; }
 
 /* 지도 영역 */
-#map-wrap { position: relative; flex: 1; min-width: 0; }
+#map-wrap { position: relative; flex: 1; min-width: 0; overflow: hidden; }
 #map { width: 100%; height: 100%; }
-#overlay-canvas { position: absolute; top: 0; left: 0; }
+#overlay-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
 
 /* 우측 패널 */
 #right-panel {
