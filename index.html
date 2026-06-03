@@ -916,6 +916,10 @@ const ui = {
 },
 };
 kakao.maps.load(() => { mapCtrl.init(); ui.init(); });
+
+window.addEventListener('load', () => {
+  setTimeout(() => { mapCtrl.resizeCanvas && mapCtrl.resizeCanvas(); render.draw && render.draw(); }, 100);
+});
 </script>
 </body>
 </html>
