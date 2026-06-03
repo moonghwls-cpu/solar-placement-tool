@@ -181,8 +181,67 @@ hr.rp-hr { border: none; border-top: 1px solid #eee; margin: 8px 0; }
 <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=ec192a0d86846241a90a82d6ef7dd806&libraries=services"></script>
 <script>
 // ── 1. KEPCO 및 지자체 데이터 ─────────────────────────
-const KEPCO_DATA = {};
-const LOCAL_DATA = {};
+const KEPCO_DATA = {
+  '서울': { office: '한국전력공사 서울본부', dept: '배전운영처', tel: '02-2192-7114', address: '서울시 중구 세종대로 55',
+    regions: {
+      '강남': { name: '강남지사', tel: '02-2192-7200', manager: '신증설설계팀 02-2192-7210' },
+      '강서': { name: '강서지사', tel: '02-2192-7300', manager: '신증설설계팀 02-2192-7310' },
+      '강북': { name: '강북지사', tel: '02-2192-7400', manager: '신증설설계팀 02-2192-7410' },
+      '강동': { name: '강동지사', tel: '02-2192-7500', manager: '신증설설계팀 02-2192-7510' },
+      '노원': { name: '노원지사', tel: '02-2192-7600', manager: '신증설설계팀 02-2192-7610' },
+      '서초': { name: '서초지사', tel: '02-2192-7700', manager: '신증설설계팀 02-2192-7710' },
+      '송파': { name: '송파지사', tel: '02-2192-7800', manager: '신증설설계팀 02-2192-7810' },
+      '영등포': { name: '영등포지사', tel: '02-2192-7900', manager: '신증설설계팀 02-2192-7910' },
+    }
+  },
+  '경기': { office: '한국전력공사 경기본부', dept: '배전운영처', tel: '031-8008-2114', address: '경기도 수원시 팔달구 효원로 1',
+    regions: {
+      '수원': { name: '수원지사', tel: '031-8008-3100', manager: '신증설설계팀 031-8008-3110' },
+      '성남': { name: '성남지사', tel: '031-8008-4100', manager: '신증설설계팀 031-8008-4110' },
+      '안양': { name: '안양지사', tel: '031-8008-5100', manager: '신증설설계팀 031-8008-5110' },
+      '용인': { name: '용인지사', tel: '031-8008-6100', manager: '신증설설계팀 031-8008-6110' },
+      '고양': { name: '고양지사', tel: '031-8008-7100', manager: '신증설설계팀 031-8008-7110' },
+      '부천': { name: '부천지사', tel: '031-8008-8100', manager: '신증설설계팀 031-8008-8110' },
+    }
+  },
+  '인천': { office: '한국전력공사 인천본부', dept: '배전운영처', tel: '032-450-2114', address: '인천시 남동구 예술로 187', regions: {} },
+  '부산': { office: '한국전력공사 부산본부', dept: '배전운영처', tel: '051-760-2114', address: '부산시 동구 범일로 102', regions: {} },
+  '대구': { office: '한국전력공사 대구본부', dept: '배전운영처', tel: '053-664-2114', address: '대구시 수성구 범어로 20', regions: {} },
+  '광주': { office: '한국전력공사 광주본부', dept: '배전운영처', tel: '062-720-2114', address: '광주시 북구 첨단과기로 333', regions: {} },
+  '대전': { office: '한국전력공사 대전본부', dept: '배전운영처', tel: '042-866-2114', address: '대전시 서구 대덕대로 233', regions: {} },
+  '충북': { office: '한국전력공사 충북본부', dept: '배전운영처', tel: '043-285-2114', address: '충북 청주시 상당구 상당로 82', regions: {} },
+  '충남': { office: '한국전력공사 충남본부', dept: '배전운영처', tel: '041-530-2114', address: '충남 천안시 서북구 천안대로 691', regions: {} },
+  '전북': { office: '한국전력공사 전북본부', dept: '배전운영처', tel: '063-279-2114', address: '전북 전주시 완산구 홍산로 111', regions: {} },
+  '전남': { office: '한국전력공사 전남본부', dept: '배전운영처', tel: '061-280-2114', address: '전남 나주시 전력로 55', regions: {} },
+  '경북': { office: '한국전력공사 경북본부', dept: '배전운영처', tel: '054-452-2114', address: '경북 구미시 공단로 415', regions: {} },
+  '경남': { office: '한국전력공사 경남본부', dept: '배전운영처', tel: '055-260-2114', address: '경남 창원시 의창구 원이대로 362', regions: {} },
+  '강원': { office: '한국전력공사 강원본부', dept: '배전운영처', tel: '033-738-2114', address: '강원 춘천시 안마산로 100', regions: {} },
+  '제주': { office: '한국전력공사 제주본부', dept: '배전운영처', tel: '064-728-2114', address: '제주시 연삼로 473', regions: {} },
+};
+
+const LOCAL_DATA = {
+  '서울': { elec: { dept: '도시기반시설본부 전기설비팀', tel: '02-2133-7700' }, devact: { dept: '도시계획국 도시계획과', tel: '02-2133-8300' },
+    regions: {
+      '강남': { elec: { dept: '강남구청 건설관리과', tel: '02-3423-5700' }, devact: { dept: '강남구청 도시계획과', tel: '02-3423-5300' } },
+      '서초': { elec: { dept: '서초구청 건설관리과', tel: '02-2155-6700' }, devact: { dept: '서초구청 도시계획과', tel: '02-2155-6300' } },
+      '송파': { elec: { dept: '송파구청 건설관리과', tel: '02-2147-3700' }, devact: { dept: '송파구청 도시계획과', tel: '02-2147-3300' } },
+    }
+  },
+  '경기': { elec: { dept: '경기도 에너지정책과', tel: '031-8008-4200' }, devact: { dept: '경기도 도시정책과', tel: '031-8008-3800' }, regions: {} },
+  '인천': { elec: { dept: '인천시 에너지정책과', tel: '032-440-4200' }, devact: { dept: '인천시 도시계획과', tel: '032-440-3500' }, regions: {} },
+  '부산': { elec: { dept: '부산시 에너지산업과', tel: '051-888-4100' }, devact: { dept: '부산시 도시계획과', tel: '051-888-3200' }, regions: {} },
+  '대구': { elec: { dept: '대구시 에너지산업과', tel: '053-803-4200' }, devact: { dept: '대구시 도시계획과', tel: '053-803-3100' }, regions: {} },
+  '광주': { elec: { dept: '광주시 에너지산업과', tel: '062-613-4200' }, devact: { dept: '광주시 도시계획과', tel: '062-613-2800' }, regions: {} },
+  '대전': { elec: { dept: '대전시 에너지정책과', tel: '042-270-4200' }, devact: { dept: '대전시 도시계획과', tel: '042-270-3200' }, regions: {} },
+  '충북': { elec: { dept: '충북도 에너지정책과', tel: '043-220-4200' }, devact: { dept: '충북도 도시계획과', tel: '043-220-3500' }, regions: {} },
+  '충남': { elec: { dept: '충남도 에너지정책과', tel: '041-635-4200' }, devact: { dept: '충남도 도시계획과', tel: '041-635-3200' }, regions: {} },
+  '전북': { elec: { dept: '전북도 에너지산업과', tel: '063-280-4200' }, devact: { dept: '전북도 도시계획과', tel: '063-280-3200' }, regions: {} },
+  '전남': { elec: { dept: '전남도 에너지산업과', tel: '061-286-4200' }, devact: { dept: '전남도 도시계획과', tel: '061-286-2800' }, regions: {} },
+  '경북': { elec: { dept: '경북도 에너지신산업과', tel: '054-880-4200' }, devact: { dept: '경북도 도시계획과', tel: '054-880-3200' }, regions: {} },
+  '경남': { elec: { dept: '경남도 에너지정책과', tel: '055-211-4200' }, devact: { dept: '경남도 도시계획과', tel: '055-211-3200' }, regions: {} },
+  '강원': { elec: { dept: '강원도 에너지과', tel: '033-249-4200' }, devact: { dept: '강원도 도시계획과', tel: '033-249-3200' }, regions: {} },
+  '제주': { elec: { dept: '제주도 에너지산업과', tel: '064-710-4200' }, devact: { dept: '제주도 도시계획과', tel: '064-710-2800' }, regions: {} },
+};
 </script>
 <script>
 // ── 2. 계산 모듈 ──────────────────────────────────────
@@ -667,7 +726,69 @@ const mapCtrl = {
 </script>
 <script>
 // ── 7. 우측 패널 모듈 ─────────────────────────────────
-const kepcoPanel = {};
+const kepcoPanel = {
+  update(addrObj, rawAddr) {
+    // Parse province and district
+    let province = '';
+    let district = '';
+    if (addrObj && addrObj.region_1depth_name) {
+      province = addrObj.region_1depth_name || '';
+      district = addrObj.region_2depth_name || '';
+    } else {
+      const parts = (rawAddr || '').split(/[\s,]+/);
+      province = parts[0] || '';
+      district = parts[1] || '';
+    }
+
+    // Match province key
+    const provKey = Object.keys(KEPCO_DATA).find(k => province.includes(k)) || '';
+    const kepco = KEPCO_DATA[provKey];
+    const local = LOCAL_DATA[provKey];
+
+    // KEPCO panel
+    const kepcoDiv = document.getElementById('rp-kepco');
+    if (kepco) {
+      const subKey = Object.keys(kepco.regions || {}).find(k => district.includes(k));
+      const sub = subKey ? kepco.regions[subKey] : null;
+      kepcoDiv.innerHTML = `
+        <h3>KEPCO 담당자</h3>
+        <h4>${kepco.office}</h4>
+        <div class="contact-item"><strong>부서:</strong> ${kepco.dept}</div>
+        <div class="contact-item"><strong>대표:</strong> <a href="tel:${kepco.tel}">${kepco.tel}</a></div>
+        <div class="contact-item"><strong>주소:</strong> ${kepco.address}</div>
+        ${sub ? `
+          <hr class="rp-hr">
+          <h4>${sub.name}</h4>
+          <div class="contact-item"><strong>전화:</strong> <a href="tel:${sub.tel}">${sub.tel}</a></div>
+          <div class="contact-item"><strong>담당:</strong> ${sub.manager}</div>
+        ` : ''}
+      `;
+    } else {
+      kepcoDiv.innerHTML = `<h3>KEPCO 담당자</h3><p class="no-data">해당 지역 데이터 없음. 아래 링크에서 확인하세요.</p>`;
+    }
+
+    // Local government panel
+    const localDiv = document.getElementById('rp-local');
+    if (local) {
+      const subKey = Object.keys(local.regions || {}).find(k => district.includes(k));
+      const sub = subKey ? local.regions[subKey] : null;
+      const elec = (sub && sub.elec) ? sub.elec : local.elec;
+      const dev = (sub && sub.devact) ? sub.devact : local.devact;
+      localDiv.innerHTML = `
+        <h3>지자체 담당자</h3>
+        <h4>전기사업 담당</h4>
+        <div class="contact-item"><strong>부서:</strong> ${elec.dept}</div>
+        <div class="contact-item"><strong>전화:</strong> <a href="tel:${elec.tel}">${elec.tel}</a></div>
+        <hr class="rp-hr">
+        <h4>개발행위 담당</h4>
+        <div class="contact-item"><strong>부서:</strong> ${dev.dept}</div>
+        <div class="contact-item"><strong>전화:</strong> <a href="tel:${dev.tel}">${dev.tel}</a></div>
+      `;
+    } else {
+      localDiv.innerHTML = `<h3>지자체 담당자</h3><p class="no-data">해당 지역 데이터 없음.</p>`;
+    }
+  }
+};
 </script>
 <script>
 // ── 8. UI 모듈 (진입점) ───────────────────────────────
