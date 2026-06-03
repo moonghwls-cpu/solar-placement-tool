@@ -186,11 +186,147 @@ const LOCAL_DATA = {};
 </script>
 <script>
 // ── 2. 계산 모듈 ──────────────────────────────────────
-const calc = {};
+const calc = {
+  MODULE_SPECS: {
+    hanwha2: { h: 2.464, w: 1.134 },
+    hanwha4: { h: 2.382, w: 1.134 },
+    trina:   { h: 2.382, w: 1.303 },
+  },
+  GAP_X: 0.01,
+  OFFSET: 0.5,
+
+  fromAngle(angleDeg) {
+    const rad = angleDeg * Math.PI / 180;
+    const L = 2.465 * Math.cos(rad);
+    const D = 2.465 * Math.sin(rad) * 2.0;
+    const Gap = L + 0.01;
+    const Pitch = L + D;
+    return { L, D, Gap, Pitch };
+  },
+
+  availableNS(buildingH, ridgeW) {
+    return (buildingH / 2) - (ridgeW / 2) - this.OFFSET;
+  },
+
+  availableLR(buildingW, ridgeW) {
+    return (buildingW / 2) - (ridgeW / 2) - this.OFFSET;
+  },
+
+  availableVertical(buildingH) {
+    return buildingH - 1.0;
+  },
+
+  cols(buildingW, moduleW) {
+    const usable = buildingW - 1.0;
+    return Math.max(0, Math.floor((usable + this.GAP_X) / (moduleW + this.GAP_X)));
+  },
+
+  sideCols(buildingW, ridgeW, moduleW) {
+    const usable = this.availableLR(buildingW, ridgeW);
+    return Math.max(0, Math.floor((usable + this.GAP_X) / (moduleW + this.GAP_X)));
+  },
+
+  southRows(avNS, Gap) {
+    return Gap > 0 ? Math.max(0, Math.floor(avNS / Gap)) : 0;
+  },
+
+  northLayout(avNS, Gap, Pitch) {
+    if (Pitch <= 0 || avNS <= 0) return { rows: 0, hasDouble: false, stdRows: 0 };
+    const std = Math.floor(avNS / Pitch);
+    let rows = std;
+    let hasDouble = false;
+    if (std >= 4) {
+      const remaining = avNS - std * Pitch;
+      if (remaining >= Gap) {
+        hasDouble = true;
+        rows = std + 1;
+      }
+    }
+    return { rows, hasDouble, stdRows: std };
+  },
+
+  verticalLayout(avV, Gap, Pitch) {
+    if (Pitch <= 0 || avV <= 0) return { rows: 0, hasDouble: false, stdRows: 0 };
+    const std = Math.floor(avV / Pitch);
+    let rows = std;
+    let hasDouble = false;
+    const remaining = avV - std * Pitch;
+    if (remaining >= Gap) {
+      hasDouble = true;
+      rows = std + 1;
+    }
+    return { rows, hasDouble, stdRows: std };
+  }
+};
 </script>
 <script>
 // ── 3. 직병렬 최적화 모듈 ─────────────────────────────
-const series = {};
+const series = {
+  solve(total) {
+    if (!total || total <= 0) return { text: '-' };
+
+    let best = null;
+    let bestDiff = Infinity;
+
+    const update = (combos) => {
+      const active = combos.filter(c => c.p > 0);
+      if (active.length === 0) return;
+      const vals = active.map(c => c.p);
+      const diff = Math.max(...vals) - Math.min(...vals);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        best = active;
+      }
+    };
+
+    // 2-series combinations (preferred)
+    // 11 + 12
+    for (let x = 0; x * 11 <= total; x++) {
+      const rem = total - x * 11;
+      if (rem % 12 === 0) {
+        const y = rem / 12;
+        update([{s:11,p:x},{s:12,p:y}]);
+      }
+    }
+    // 11 + 13
+    for (let x = 0; x * 11 <= total; x++) {
+      const rem = total - x * 11;
+      if (rem % 13 === 0) {
+        const z = rem / 13;
+        update([{s:11,p:x},{s:13,p:z}]);
+      }
+    }
+    // 12 + 13
+    for (let y = 0; y * 12 <= total; y++) {
+      const rem = total - y * 12;
+      if (rem % 13 === 0) {
+        const z = rem / 13;
+        update([{s:12,p:y},{s:13,p:z}]);
+      }
+    }
+
+    // If no 2-series solution found, try 3-series
+    if (!best) {
+      for (let x = 0; x * 11 <= total; x++) {
+        for (let y = 0; x * 11 + y * 12 <= total; y++) {
+          const rem = total - x * 11 - y * 12;
+          if (rem >= 0 && rem % 13 === 0) {
+            const z = rem / 13;
+            update([{s:11,p:x},{s:12,p:y},{s:13,p:z}]);
+          }
+        }
+      }
+    }
+
+    if (!best) return { text: '조합 없음' };
+
+    const text = best
+      .filter(b => b.p > 0)
+      .map(b => `${b.s}직렬 × ${b.p}병렬`)
+      .join(' + ');
+    return { combos: best, text };
+  }
+};
 </script>
 <script>
 // ── 4. 배치 계산 모듈 ─────────────────────────────────
