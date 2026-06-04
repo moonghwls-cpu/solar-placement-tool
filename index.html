@@ -61,6 +61,13 @@ body { font-family: 'Segoe UI', sans-serif; font-size: 13px; background: #f0f0f0
   z-index: 5; pointer-events: none; box-shadow: 0 2px 6px rgba(0,0,0,0.3);
 }
 #move-hint.show { display: block; }
+#nomap-banner {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+  background: rgba(52,73,94,0.96); color: #fff; padding: 6px 14px;
+  border-radius: 20px; font-size: 12px; font-weight: 600; display: none;
+  z-index: 5; pointer-events: none; box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+#nomap-banner.show { display: block; }
 
 /* 우측 패널 */
 #right-panel {
@@ -186,6 +193,7 @@ hr.rp-hr { border: none; border-top: 1px solid #eee; margin: 8px 0; }
     <div id="map"></div>
     <canvas id="overlay-canvas"></canvas>
     <div id="move-hint">🟧 건물 이동 모드 — 건물을 드래그하세요 (지도 이동은 잠금)</div>
+    <div id="nomap-banner">지도 미연결 — 도면 모드 · 배치·계산·직병렬은 정상 동작 (카카오맵 설정 시 지도 표시)</div>
   </div>
   <div id="right-panel">
     <div class="search-wrap">
@@ -208,7 +216,7 @@ hr.rp-hr { border: none; border-top: 1px solid #eee; margin: 8px 0; }
   </div>
 </div>
 
-<script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=ec192a0d86846241a90a82d6ef7dd806&libraries=services"></script>
+<script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=ec192a0d86846241a90a82d6ef7dd806&libraries=services&autoload=false"></script>
 <script>
 // ── 1. KEPCO 및 지자체 데이터 ─────────────────────────
 const KEPCO_DATA = {
@@ -530,11 +538,12 @@ const render = {
     const canvas = document.getElementById('overlay-canvas');
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (!mapCtrl.map) return;
+    if (!mapCtrl.ready) return;
 
     const st = ui.getState();
+    if (mapCtrl.noMap) mapCtrl.autoFit(st);       // 도면 모드: 건물이 항상 화면에 꽉 차게
     const mpp = mapCtrl.mPerPx;
-    const bCenter = mapCtrl.latLngToPx(mapCtrl.buildingLatLng);
+    const bCenter = mapCtrl.noMap ? mapCtrl.centerPx() : mapCtrl.latLngToPx(mapCtrl.buildingLatLng);
 
     // 미터(건물 로컬) → 캔버스 픽셀. 캔버스 Y는 아래가 +이므로 북(+Y)은 위로 반전.
     const tx = (mx) => bCenter.x + (mx - st.buildingW / 2) / mpp;
@@ -628,6 +637,8 @@ const mapCtrl = {
   mPerPx: 1,
   buildingLatLng: null,
   moveMode: false,
+  ready: false,   // init 또는 initNoMap 완료 후 true
+  noMap: false,   // 카카오 SDK 미가용 시 도면 모드
 
   init() {
     const container = document.getElementById('map');
@@ -645,6 +656,33 @@ const mapCtrl = {
     window.addEventListener('resize', () => { this.resizeCanvas(); this.updateScale(); render.draw(); });
 
     this.setupDrag();
+    this.ready = true;
+  },
+
+  // 카카오 SDK가 없을 때(도메인 미등록/서비스 비활성/오프라인): 지도 없이 도면만 렌더
+  initNoMap() {
+    this.noMap = true;
+    this.ready = true;
+    const mapDiv = document.getElementById('map');
+    if (mapDiv) mapDiv.style.background = '#eef1f4';
+    const banner = document.getElementById('nomap-banner');
+    if (banner) banner.classList.add('show');
+    this.resizeCanvas();
+    window.addEventListener('resize', () => { this.resizeCanvas(); render.draw(); });
+  },
+
+  centerPx() {
+    const canvas = document.getElementById('overlay-canvas');
+    return { x: canvas.width / 2, y: canvas.height / 2 };
+  },
+
+  // 도면 모드: 건물(W×H)이 캔버스의 ~86%에 들어오도록 mPerPx 자동 산출
+  autoFit(st) {
+    const canvas = document.getElementById('overlay-canvas');
+    const usableW = Math.max(1, canvas.width * 0.86);
+    const usableH = Math.max(1, canvas.height * 0.86);
+    const fit = Math.max(st.buildingW / usableW, st.buildingH / usableH);
+    this.mPerPx = fit > 0 ? fit : 1;
   },
 
   // 건물 이동 모드에서만 캔버스가 드래그를 받아 건물 위치(위경도)를 이동
@@ -677,6 +715,7 @@ const mapCtrl = {
   },
 
   setMoveMode(on) {
+    if (this.noMap) return;   // 도면 모드는 건물이 항상 중앙 고정
     this.moveMode = on;
     const canvas = document.getElementById('overlay-canvas');
     const hint = document.getElementById('move-hint');
@@ -685,12 +724,13 @@ const mapCtrl = {
   },
 
   setMapType(type) {
-    // 'road' | 'sat'
+    if (!this.map) return;    // 'road' | 'sat'
     if (type === 'sat') this.map.setMapTypeId(kakao.maps.MapTypeId.HYBRID);
     else this.map.setMapTypeId(kakao.maps.MapTypeId.ROADMAP);
   },
 
   centerBuilding() {
+    if (!this.map) return;
     this.buildingLatLng = this.map.getCenter();
     render.draw();
   },
@@ -824,6 +864,11 @@ const ui = {
   searchAddress() {
     const addr = document.getElementById('inp-addr').value.trim();
     if (!addr) return;
+    // 지도 미연결(도면 모드): 지오코딩은 불가하나 입력 주소로 KEPCO/지자체 패널은 채운다
+    if (mapCtrl.noMap || typeof kakao === 'undefined' || !kakao.maps || !kakao.maps.services) {
+      kepcoPanel.update(null, addr);
+      return;
+    }
     const geocoder = new kakao.maps.services.Geocoder();
     geocoder.addressSearch(addr, (result, status) => {
       if (status === kakao.maps.services.Status.OK) {
@@ -888,10 +933,19 @@ const ui = {
   }
 };
 
-kakao.maps.load(() => { mapCtrl.init(); ui.init(); });
-window.addEventListener('load', () => {
-  setTimeout(() => { if (mapCtrl.map) { mapCtrl.resizeCanvas(); mapCtrl.updateScale(); render.draw(); } }, 150);
-});
+// 부트스트랩: 카카오 SDK가 정상 로드됐으면 지도 모드, 아니면 도면 모드로 폴백
+function bootstrapApp() {
+  if (window.__solarBooted) return;
+  window.__solarBooted = true;
+  const hasKakao = (typeof kakao !== 'undefined' && kakao.maps && typeof kakao.maps.load === 'function');
+  if (hasKakao) {
+    kakao.maps.load(() => { mapCtrl.init(); ui.init(); });
+  } else {
+    mapCtrl.initNoMap();   // 도메인 미등록/서비스 비활성/오프라인 → 지도 없이 도면만
+    ui.init();
+  }
+}
+window.addEventListener('load', () => setTimeout(bootstrapApp, 200));
 </script>
 </body>
 </html>
