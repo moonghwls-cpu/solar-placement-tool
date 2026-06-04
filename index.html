@@ -99,6 +99,19 @@ body { font-family: 'Segoe UI', sans-serif; font-size: 13px; background: #f0f0f0
 .link-btn.green:hover { background: #1e8449; }
 .no-data { color: #aaa; font-size: 12px; font-style: italic; }
 hr.rp-hr { border: none; border-top: 1px solid #eee; margin: 8px 0; }
+/* 예상 수익표 */
+.rev-inputs { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.rev-inputs label { font-size: 12px; color: #555; display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.rev-inputs .unit { color: #aaa; font-size: 10px; margin-left: auto; margin-right: 4px; }
+.rev-inputs input { width: 92px; padding: 4px 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; text-align: right; }
+.kpx-link { font-size: 11px; color: #2980b9; text-decoration: none; font-weight: 600; }
+.kpx-link:hover { text-decoration: underline; }
+.rev-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
+.rev-table td { padding: 4px 2px; border-bottom: 1px solid #f1f1f1; color: #666; }
+.rev-table td:last-child { text-align: right; font-weight: 600; color: #333; }
+.rev-table tr.rev-total td { border-top: 2px solid #2ecc71; border-bottom: none; padding-top: 7px; font-size: 14px; color: #222; }
+.rev-table tr.rev-total td:last-child { color: #27ae60; font-weight: 700; }
+.rev-note { font-size: 10px; color: #aaa; margin-top: 7px; line-height: 1.5; }
 </style>
 </head>
 <body>
@@ -237,6 +250,21 @@ hr.rp-hr { border: none; border-top: 1px solid #eee; margin: 8px 0; }
     <div id="rp-local" class="rp-section">
       <h3>지자체 담당자</h3>
       <p class="no-data">주소를 검색하세요.</p>
+    </div>
+    <div id="rp-revenue" class="rp-section">
+      <h3>예상 수익 (월)</h3>
+      <div class="rev-inputs">
+        <label>오늘의 SMP <span class="unit">원/kWh</span><input type="number" id="inp-smp" value="127.85" step="0.01" min="0"></label>
+        <label>오늘의 REC <span class="unit">원/REC</span><input type="number" id="inp-rec" value="71069" step="1" min="0"></label>
+        <a class="kpx-link" href="https://new.kpx.or.kr/main/#section-2nd" target="_blank">▶ KPX에서 오늘 SMP/REC 확인</a>
+      </div>
+      <table class="rev-table">
+        <tr><td>총 용량</td><td id="rev-cap">- kW</td></tr>
+        <tr><td>월 SMP 수익</td><td id="rev-smp">- 원</td></tr>
+        <tr><td>월 REC 수익</td><td id="rev-rec">- 원</td></tr>
+        <tr class="rev-total"><td>총 월수익</td><td id="rev-total">- 원</td></tr>
+      </table>
+      <div class="rev-note">월 SMP = 용량 × SMP × 3.8h × 30일<br>월 REC = 용량 × (REC÷1000) × 1.5 × 3.8h × 30일<br>※ REC는 원/REC(=원/MWh) → ÷1000로 원/kWh 환산</div>
     </div>
   </div>
 </div>
@@ -1141,6 +1169,25 @@ const ui = {
     $('res-count').textContent = totalModules + (n > 1 ? ' (' + n + '동)' : '');
     $('res-cap').textContent = (totalCapKw || 0).toFixed(3);
     $('res-series').textContent = '직병렬: ' + series.solve(totalModules).text;
+
+    this.lastCapKw = totalCapKw || 0;
+    this.updateRevenue();
+  },
+
+  // 예상 월 수익(KPX SMP/REC 입력값 기준). REC는 원/REC → ÷1000로 원/kWh 환산.
+  updateRevenue() {
+    const $ = (id) => document.getElementById(id);
+    if (!$('rev-total')) return;
+    const cap = this.lastCapKw || 0;
+    const smp = parseFloat($('inp-smp').value) || 0;
+    const rec = parseFloat($('inp-rec').value) || 0;
+    const smpRev = cap * smp * 3.8 * 30;
+    const recRev = cap * (rec / 1000) * 1.5 * 3.8 * 30;
+    const won = (v) => Math.round(v).toLocaleString('ko-KR') + ' 원';
+    $('rev-cap').textContent = cap.toFixed(3) + ' kW';
+    $('rev-smp').textContent = won(smpRev);
+    $('rev-rec').textContent = won(recRev);
+    $('rev-total').textContent = won(smpRev + recRev);
   },
 
   searchAddress() {
@@ -1221,6 +1268,7 @@ const ui = {
     document.getElementById('btn-center').addEventListener('click', () => mapCtrl.centerBuilding());
 
     document.getElementById('inp-addr').addEventListener('keydown', (e) => { if (e.key === 'Enter') this.searchAddress(); });
+    ['inp-smp', 'inp-rec'].forEach(id => document.getElementById(id).addEventListener('input', () => this.updateRevenue()));
 
     render.draw();
   },
