@@ -564,57 +564,66 @@ const render = {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!mapCtrl.ready) return;
 
-    const st = ui.getState();
-    const fit = mapCtrl.noMap || mapCtrl.drawingView; // 도면뷰: 건물이 화면에 꽉 차게
-    if (fit) mapCtrl.autoFit(st);
-    const mpp = mapCtrl.mPerPx;
-    const bCenter = mapCtrl.buildingCenterScreen();
+    const fit = mapCtrl.noMap || mapCtrl.drawingView; // 도면뷰: 선택 건물 하나만 꽉 채움
+    const builds = ui.buildings;
 
-    // 건물이 정의된 경우에만 그린다(초기 잔상 방지)
-    if (st.hasBuilding) {
-      ctx.save();
-      if (st.rotation) { // 건물 회전: 화면 중심(건물 중심) 기준 회전
-        ctx.translate(bCenter.x, bCenter.y);
-        ctx.rotate(st.rotation * Math.PI / 180);
-        ctx.translate(-bCenter.x, -bCenter.y);
-      }
-      // 미터(건물 로컬) → 캔버스 픽셀. 캔버스 Y는 아래가 +이므로 북(+Y)은 위로 반전.
-      const tx = (mx) => bCenter.x + (mx - st.buildingW / 2) / mpp;
-      const ty = (my) => bCenter.y + (st.buildingH / 2 - my) / mpp;
-      const px = (m) => m / mpp;
+    // 전 건물 합계(용량 합산)
+    let grandModules = 0, grandCap = 0;
+    builds.forEach(b => {
+      const r = b.forward ? placement.forward(b) : placement.reverse(b);
+      grandModules += r.total; grandCap += r.total * (b.wp || 0) / 1000;
+    });
 
-      // 1) 건물 외곽선(자주색)
-      ctx.strokeStyle = '#8B008B'; ctx.lineWidth = 2; ctx.setLineDash([]);
-      ctx.strokeRect(tx(0), ty(st.buildingH), px(st.buildingW), px(st.buildingH));
-      // 2) 500mm 외벽 이격 빨간 점선
-      const off = calc.OFFSET;
-      ctx.strokeStyle = '#ff0000'; ctx.lineWidth = 1; ctx.setLineDash([6, 4]);
-      ctx.strokeRect(tx(off), ty(st.buildingH - off), px(st.buildingW - off * 2), px(st.buildingH - off * 2));
-      ctx.setLineDash([]);
-      // 3) 용마루(회색 띠)
-      ctx.fillStyle = '#9a9a9a';
-      if (st.forward) ctx.fillRect(tx(0), ty(st.buildingH / 2 + st.ridgeW / 2), px(st.buildingW), px(st.ridgeW));
-      else ctx.fillRect(tx(st.buildingW / 2 - st.ridgeW / 2), ty(st.buildingH), px(st.ridgeW), px(st.buildingH));
-      // 4) 모듈(밝은 하늘색 + 0.002m 빨간 테두리)
-      const result = st.forward ? placement.forward(st) : placement.reverse(st);
-      const borderPx = Math.max(1, px(0.002));
-      ctx.setLineDash([]);
-      for (const m of result.modules) {
-        const X = tx(m.x), Y = ty(m.y + m.h), W = px(m.w), H = px(m.h);
-        ctx.fillStyle = '#87CEEB'; ctx.fillRect(X, Y, W, H);
-        ctx.strokeStyle = '#ff0000'; ctx.lineWidth = borderPx; ctx.strokeRect(X, Y, W, H);
-      }
-      // 5) 방위/치수/영역 라벨
-      this.drawLabels(ctx, st, tx, ty, px);
-      ctx.restore();
-      // 6) 상단 패널 갱신
-      ui.updateResults(result);
+    if (fit) {
+      const b = ui.currentBuilding() || builds[0];
+      if (b) { mapCtrl.autoFit(b); this.drawOneBuilding(ctx, b, mapCtrl.centerPx(), mapCtrl.mPerPx, true); }
     } else {
-      ui.updateResults({ southGap: 0, northGap: 0, total: 0 });
+      builds.forEach((b, i) => {
+        if (!b.latLng) return;
+        this.drawOneBuilding(ctx, b, mapCtrl.latLngToPx(b.latLng), mapCtrl.mPerPx, i === ui.selected);
+      });
     }
 
-    // 7) 거리측정/건물그리기 오버레이(화면 좌표 — 회전 영향 없음)
-    this.drawOverlay(ctx);
+    ui.updateResults(grandModules, grandCap, ui.currentBuilding());
+    this.drawOverlay(ctx); // 측정/그리기 오버레이(화면 좌표)
+  },
+
+  // 건물 1동 렌더(회전 포함) → 배치 결과 반환
+  drawOneBuilding(ctx, b, bCenter, mpp, selected) {
+    ctx.save();
+    if (b.rotation) {
+      ctx.translate(bCenter.x, bCenter.y);
+      ctx.rotate(b.rotation * Math.PI / 180);
+      ctx.translate(-bCenter.x, -bCenter.y);
+    }
+    const tx = (mx) => bCenter.x + (mx - b.buildingW / 2) / mpp;
+    const ty = (my) => bCenter.y + (b.buildingH / 2 - my) / mpp;
+    const px = (m) => m / mpp;
+
+    // 건물 외곽선(선택 동은 분홍·굵게)
+    ctx.strokeStyle = selected ? '#ff2bd6' : '#8B008B'; ctx.lineWidth = selected ? 3 : 2; ctx.setLineDash([]);
+    ctx.strokeRect(tx(0), ty(b.buildingH), px(b.buildingW), px(b.buildingH));
+    // 500mm 외벽 이격 빨간 점선
+    const off = calc.OFFSET;
+    ctx.strokeStyle = '#ff0000'; ctx.lineWidth = 1; ctx.setLineDash([6, 4]);
+    ctx.strokeRect(tx(off), ty(b.buildingH - off), px(b.buildingW - off * 2), px(b.buildingH - off * 2));
+    ctx.setLineDash([]);
+    // 용마루
+    ctx.fillStyle = '#9a9a9a';
+    if (b.forward) ctx.fillRect(tx(0), ty(b.buildingH / 2 + b.ridgeW / 2), px(b.buildingW), px(b.ridgeW));
+    else ctx.fillRect(tx(b.buildingW / 2 - b.ridgeW / 2), ty(b.buildingH), px(b.ridgeW), px(b.buildingH));
+    // 모듈
+    const result = b.forward ? placement.forward(b) : placement.reverse(b);
+    const borderPx = Math.max(1, px(0.002));
+    ctx.setLineDash([]);
+    for (const m of result.modules) {
+      const X = tx(m.x), Y = ty(m.y + m.h), W = px(m.w), H = px(m.h);
+      ctx.fillStyle = '#87CEEB'; ctx.fillRect(X, Y, W, H);
+      ctx.strokeStyle = '#ff0000'; ctx.lineWidth = borderPx; ctx.strokeRect(X, Y, W, H);
+    }
+    this.drawLabels(ctx, b, tx, ty, px);
+    ctx.restore();
+    return result;
   },
 
   // 라벨 칩
@@ -780,9 +789,22 @@ const mapCtrl = {
     this.mPerPx = fit > 0 ? fit : 1;
   },
 
-  // 건물 중심의 화면(캔버스) 좌표
-  buildingCenterScreen() {
-    return (this.noMap || this.drawingView) ? this.centerPx() : this.latLngToPx(this.buildingLatLng);
+  // 클릭 지점에 있는 동의 인덱스(회전 역보정 후 bbox 검사). 이동은 지도뷰에서만.
+  buildingAt(p) {
+    if (this.noMap || this.drawingView) return -1;
+    for (let i = ui.buildings.length - 1; i >= 0; i--) {
+      const b = ui.buildings[i];
+      if (!b.latLng) continue;
+      const bc = this.latLngToPx(b.latLng);
+      let q = p;
+      if (b.rotation) {
+        const a = -b.rotation * Math.PI / 180, dx = p.x - bc.x, dy = p.y - bc.y;
+        q = { x: bc.x + dx * Math.cos(a) - dy * Math.sin(a), y: bc.y + dx * Math.sin(a) + dy * Math.cos(a) };
+      }
+      const halfW = (b.buildingW / 2) / this.mPerPx, halfH = (b.buildingH / 2) / this.mPerPx;
+      if (Math.abs(q.x - bc.x) <= halfW && Math.abs(q.y - bc.y) <= halfH) return i;
+    }
+    return -1;
   },
 
   // 모든 캔버스 상호작용을 mode에 따라 처리(이동/측정/그리기)
@@ -792,21 +814,23 @@ const mapCtrl = {
 
     canvas.addEventListener('mousedown', (e) => {
       if (this.mode !== 'move') return;
-      const st = ui.getState();
-      if (!st.hasBuilding) return;
       const p = this.canvasXY(e);
-      const bpx = this.buildingCenterScreen();
-      const halfW = (st.buildingW / 2) / this.mPerPx, halfH = (st.buildingH / 2) / this.mPerPx;
-      if (Math.abs(p.x - bpx.x) <= halfW && Math.abs(p.y - bpx.y) <= halfH) {
-        dragging = true; startPx = p; startLatLng = this.buildingLatLng; e.preventDefault();
+      const idx = this.buildingAt(p);   // 클릭한 동 선택 후 드래그
+      if (idx >= 0) {
+        ui.selectBuilding(idx);
+        dragging = true; startPx = p; startLatLng = ui.buildings[idx].latLng; e.preventDefault();
+        render.draw();
       }
     });
     canvas.addEventListener('mousemove', (e) => {
       const p = this.canvasXY(e);
       if (this.mode === 'move' && dragging) {
-        const dxM = (p.x - startPx.x) * this.mPerPx, dyM = (p.y - startPx.y) * this.mPerPx;
-        this.buildingLatLng = this.offsetLatLng(startLatLng, dxM, -dyM);
-        render.draw();
+        const b = ui.currentBuilding();
+        if (b && startLatLng) {
+          const dxM = (p.x - startPx.x) * this.mPerPx, dyM = (p.y - startPx.y) * this.mPerPx;
+          b.latLng = this.offsetLatLng(startLatLng, dxM, -dyM);
+          render.draw();
+        }
       } else if (this.mode === 'measure' && this.measureCur.length && !this.deleteMode) {
         this.measurePreview = p; render.draw();
       } else if (this.mode === 'draw' && this.drawPts.length) {
@@ -916,15 +940,16 @@ const mapCtrl = {
     rot = (Math.round(rot) + 360) % 360;
 
     const st = ui.getState();
-    st.buildingW = +(lenAB * this.mPerPx).toFixed(2);   // 가로 = AB
-    st.buildingH = +(perpAbs * this.mPerPx).toFixed(2); // 세로 = 폭(C)
-    st.rotation = rot;
-    st.hasBuilding = true;
-    st.forward = (st.buildingW >= st.buildingH);        // 가로≥세로 → 정방향
-    if (!this.noMap && !this.drawingView) this.buildingLatLng = this.pxToLatLng(center);
+    const Wm = +(lenAB * this.mPerPx).toFixed(2);     // 가로 = AB
+    const Hm = +(perpAbs * this.mPerPx).toFixed(2);   // 세로 = 폭(C)
+    ui.buildings.push({                                // 새 '동' 추가(지우기 전까지 누적)
+      model: st.model, wp: st.wp, ridgeW: st.ridgeW, angle: st.angle, spaced: st.spaced,
+      buildingW: Wm, buildingH: Hm, rotation: rot, forward: (Wm >= Hm),
+      latLng: (this.noMap || this.drawingView) ? null : this.pxToLatLng(center)
+    });
+    ui.selectBuilding(ui.buildings.length - 1);
     this.drawPts = []; this.drawPreview = null;
     this.setMode('none');
-    ui.syncFromState();
     render.draw();
   },
 
@@ -949,8 +974,8 @@ const mapCtrl = {
 
   centerBuilding() {
     if (!this.map) return;
-    this.buildingLatLng = this.map.getCenter();
-    render.draw();
+    const b = ui.currentBuilding();
+    if (b) { b.latLng = this.map.getCenter(); render.draw(); }
   },
 
   resizeCanvas() {
@@ -1063,21 +1088,58 @@ const ui = {
   },
   getState() { return this.state; },
 
-  updateResults(result) {
-    const st = this.state;
-    const { L, Gap, Pitch } = calc.fromAngle(st.angle);
-    const $ = (id) => document.getElementById(id);
+  buildings: [],   // 여러 동: 각 {model,wp,ridgeW,angle,spaced,buildingW,buildingH,rotation,forward,latLng}
+  selected: -1,    // 편집 대상 동 인덱스
+  currentBuilding() { return this.buildings[this.selected] || null; },
 
+  selectBuilding(i) {
+    this.selected = i;
+    const b = this.buildings[i];
+    if (b) {
+      Object.assign(this.state, {
+        model: b.model, wp: b.wp, ridgeW: b.ridgeW, angle: b.angle, spaced: b.spaced,
+        buildingW: b.buildingW, buildingH: b.buildingH, rotation: b.rotation, forward: b.forward, hasBuilding: true
+      });
+      this.syncFromState();
+    }
+  },
+
+  // 직접 치수 입력 시 지도 중심에 1동 생성
+  addBuildingAtCenter() {
+    const st = this.state;
+    this.buildings.push({
+      model: st.model, wp: st.wp, ridgeW: st.ridgeW, angle: st.angle, spaced: st.spaced,
+      buildingW: st.buildingW, buildingH: st.buildingH, rotation: st.rotation, forward: st.forward,
+      latLng: mapCtrl.map ? mapCtrl.map.getCenter() : null
+    });
+    this.selected = this.buildings.length - 1;
+    this.state.hasBuilding = true;
+  },
+
+  // 패널 편집 → state + 선택 동에 반영 후 재렌더
+  setParam(key, value) {
+    this.state[key] = value;
+    const b = this.currentBuilding();
+    if (b) b[key] = value;
+    render.draw();
+  },
+
+  updateResults(totalModules, totalCapKw, sel) {
+    const $ = (id) => document.getElementById(id);
+    const ang = sel ? sel.angle : this.state.angle;
+    const { L, Gap, Pitch } = calc.fromAngle(ang);
     $('res-L').textContent = L.toFixed(3);
     $('res-Gap').textContent = Gap.toFixed(3);
     $('res-Pitch').textContent = Pitch.toFixed(3);
-
-    // 실제 렌더링된 모듈 기준 집계
-    $('res-south').textContent = result.southGap.toFixed(3);
-    $('res-north').textContent = result.northGap.toFixed(3);
-    $('res-count').textContent = result.total;
-    $('res-cap').textContent = (result.total * st.wp / 1000).toFixed(3);
-    $('res-series').textContent = '직병렬: ' + series.solve(result.total).text;
+    if (sel) {
+      const r = sel.forward ? placement.forward(sel) : placement.reverse(sel);
+      $('res-south').textContent = r.southGap.toFixed(3);
+      $('res-north').textContent = r.northGap.toFixed(3);
+    } else { $('res-south').textContent = '-'; $('res-north').textContent = '-'; }
+    const n = this.buildings.length;
+    $('res-count').textContent = totalModules + (n > 1 ? ' (' + n + '동)' : '');
+    $('res-cap').textContent = (totalCapKw || 0).toFixed(3);
+    $('res-series').textContent = '직병렬: ' + series.solve(totalModules).text;
   },
 
   searchAddress() {
@@ -1094,7 +1156,6 @@ const ui = {
         const latlng = new kakao.maps.LatLng(parseFloat(result[0].y), parseFloat(result[0].x));
         mapCtrl.map.setLevel(1);   // 옥상이 보이도록 최대 확대
         mapCtrl.map.setCenter(latlng);
-        mapCtrl.buildingLatLng = latlng;
         mapCtrl.updateScale();
         render.draw();
         kepcoPanel.update(result[0].address, addr);
@@ -1114,34 +1175,35 @@ const ui = {
   bindNumber(id, key, fallback) {
     document.getElementById(id).addEventListener('input', (e) => {
       const v = parseFloat(e.target.value);
-      this.state[key] = (v > 0) ? v : fallback;
-      if (key === 'buildingW' || key === 'buildingH' || key === 'ridgeW') this.state.hasBuilding = true;
-      render.draw();
+      const val = (v > 0) ? v : fallback;
+      // 치수 직접 입력인데 선택 동이 없으면 지도 중심에 1동 생성
+      if ((key === 'buildingW' || key === 'buildingH') && this.selected < 0) this.addBuildingAtCenter();
+      this.setParam(key, val);
     });
   },
 
   init() {
     const s = this.state;
 
-    document.getElementById('sel-model').addEventListener('change', (e) => { s.model = e.target.value; render.draw(); });
+    document.getElementById('sel-model').addEventListener('change', (e) => { this.setParam('model', e.target.value); });
     this.bindNumber('inp-wp', 'wp', 500);
     this.bindNumber('inp-bw', 'buildingW', 20);
     this.bindNumber('inp-bh', 'buildingH', 30);
     this.bindNumber('inp-ridge', 'ridgeW', 0.5);
 
-    // 슬라이더 + 숫자입력 동기화(경사각·건물 회전)
+    // 슬라이더 + 숫자입력 동기화(경사각·건물 회전) → 선택 동에 반영
     const bindAngle = (sliderId, numId, key, max) => {
       const sl = document.getElementById(sliderId), num = document.getElementById(numId);
       const clamp = (v) => Math.max(0, Math.min(max, isNaN(v) ? 0 : v));
-      sl.addEventListener('input', () => { const v = clamp(parseFloat(sl.value)); s[key] = v; num.value = v; render.draw(); });
-      num.addEventListener('input', () => { const v = clamp(parseFloat(num.value)); s[key] = v; sl.value = v; render.draw(); });
+      sl.addEventListener('input', () => { const v = clamp(parseFloat(sl.value)); num.value = v; ui.setParam(key, v); });
+      num.addEventListener('input', () => { const v = clamp(parseFloat(num.value)); sl.value = v; ui.setParam(key, v); });
       num.addEventListener('change', () => { num.value = clamp(parseFloat(num.value)); });
     };
     bindAngle('sl-angle', 'inp-angle', 'angle', 20);
     bindAngle('sl-rot', 'inp-rot', 'rotation', 360);
 
-    this.bindToggle('btn-forward', 'btn-reverse', () => s.forward = true, () => s.forward = false);
-    this.bindToggle('btn-tight', 'btn-spaced', () => s.spaced = false, () => s.spaced = true);
+    this.bindToggle('btn-forward', 'btn-reverse', () => this.setParam('forward', true), () => this.setParam('forward', false));
+    this.bindToggle('btn-tight', 'btn-spaced', () => this.setParam('spaced', false), () => this.setParam('spaced', true));
     this.bindToggle('btn-mapview', 'btn-drawview', () => mapCtrl.setView('map'), () => mapCtrl.setView('draw'));
     this.bindToggle('btn-road', 'btn-sat', () => mapCtrl.setMapType('road'), () => mapCtrl.setMapType('sat'));
 
@@ -1172,19 +1234,24 @@ const ui = {
 
   // state → 입력칸·슬라이더·정/역 버튼 반영(건물그리기 자동 산출 후)
   syncFromState() {
-    const s = this.state;
-    document.getElementById('inp-bw').value = s.buildingW;
-    document.getElementById('inp-bh').value = s.buildingH;
-    document.getElementById('sl-angle').value = s.angle;
-    document.getElementById('inp-angle').value = s.angle;
-    document.getElementById('sl-rot').value = s.rotation;
-    document.getElementById('inp-rot').value = s.rotation;
-    document.getElementById('btn-forward').classList.toggle('active', s.forward);
-    document.getElementById('btn-reverse').classList.toggle('active', !s.forward);
+    const s = this.state, $ = (id) => document.getElementById(id);
+    $('sel-model').value = s.model;
+    $('inp-wp').value = s.wp;
+    $('inp-bw').value = s.buildingW;
+    $('inp-bh').value = s.buildingH;
+    $('inp-ridge').value = s.ridgeW;
+    $('sl-angle').value = s.angle; $('inp-angle').value = s.angle;
+    $('sl-rot').value = s.rotation; $('inp-rot').value = s.rotation;
+    $('btn-forward').classList.toggle('active', s.forward);
+    $('btn-reverse').classList.toggle('active', !s.forward);
+    $('btn-tight').classList.toggle('active', !s.spaced);
+    $('btn-spaced').classList.toggle('active', s.spaced);
   },
 
   // 지우기: 건물·모듈·측정 모두 제거
   clearAll() {
+    this.buildings = [];
+    this.selected = -1;
     this.state.hasBuilding = false;
     this.state.rotation = 0;
     document.getElementById('sl-rot').value = 0;
