@@ -161,6 +161,13 @@ hr.rp-hr { border: none; border-top: 1px solid #eee; margin: 8px 0; }
   <div class="divider"></div>
 
   <div class="ctrl-group">
+    <label>보기</label>
+    <div class="ctrl-row">
+      <button class="btn-toggle active" id="btn-mapview">지도</button>
+      <button class="btn-toggle" id="btn-drawview">도면</button>
+    </div>
+  </div>
+  <div class="ctrl-group">
     <label>지도</label>
     <div class="ctrl-row">
       <button class="btn-toggle active" id="btn-road">일반</button>
@@ -541,9 +548,10 @@ const render = {
     if (!mapCtrl.ready) return;
 
     const st = ui.getState();
-    if (mapCtrl.noMap) mapCtrl.autoFit(st);       // 도면 모드: 건물이 항상 화면에 꽉 차게
+    const fit = mapCtrl.noMap || mapCtrl.drawingView; // 도면뷰: 건물이 화면에 꽉 차게
+    if (fit) mapCtrl.autoFit(st);
     const mpp = mapCtrl.mPerPx;
-    const bCenter = mapCtrl.noMap ? mapCtrl.centerPx() : mapCtrl.latLngToPx(mapCtrl.buildingLatLng);
+    const bCenter = fit ? mapCtrl.centerPx() : mapCtrl.latLngToPx(mapCtrl.buildingLatLng);
 
     // 미터(건물 로컬) → 캔버스 픽셀. 캔버스 Y는 아래가 +이므로 북(+Y)은 위로 반전.
     const tx = (mx) => bCenter.x + (mx - st.buildingW / 2) / mpp;
@@ -637,14 +645,15 @@ const mapCtrl = {
   mPerPx: 1,
   buildingLatLng: null,
   moveMode: false,
-  ready: false,   // init 또는 initNoMap 완료 후 true
-  noMap: false,   // 카카오 SDK 미가용 시 도면 모드
+  ready: false,       // init 또는 initNoMap 완료 후 true
+  noMap: false,       // 카카오 SDK 미가용 시 도면 모드
+  drawingView: false, // 지도 위가 아니라 화면 꽉 채운 도면뷰로 볼지
 
   init() {
     const container = document.getElementById('map');
     this.map = new kakao.maps.Map(container, {
       center: new kakao.maps.LatLng(37.5665, 126.9780),
-      level: 3,
+      level: 1,   // 단일 건물 확인용 최대 확대
     });
     this.buildingLatLng = this.map.getCenter();
     this.resizeCanvas();
@@ -729,6 +738,15 @@ const mapCtrl = {
     else this.map.setMapTypeId(kakao.maps.MapTypeId.ROADMAP);
   },
 
+  // 지도뷰 ⇄ 도면뷰(화면 꽉 채움). 카카오 미가용 시엔 항상 도면뷰.
+  setView(mode) {
+    if (this.noMap) return;
+    this.drawingView = (mode === 'draw');
+    const mapDiv = document.getElementById('map');
+    if (mapDiv) mapDiv.style.visibility = this.drawingView ? 'hidden' : 'visible';
+    render.draw();
+  },
+
   centerBuilding() {
     if (!this.map) return;
     this.buildingLatLng = this.map.getCenter();
@@ -743,21 +761,20 @@ const mapCtrl = {
   },
 
   updateScale() {
+    // 컨테이너 좌표(줌 반영)로 m/px 산출. pointFromCoords(월드좌표)는 줌 무관이라 쓰면 안 됨.
     const proj = this.map.getProjection();
     const center = this.map.getCenter();
-    const p1 = proj.pointFromCoords(center);
-    const p2 = proj.pointFromCoords(new kakao.maps.LatLng(center.getLat(), center.getLng() + 0.001));
-    const pxDist = Math.abs(p2.x - p1.x);
+    const a = proj.containerPointFromCoords(center);
+    const b = proj.containerPointFromCoords(new kakao.maps.LatLng(center.getLat(), center.getLng() + 0.001));
+    const pxDist = Math.abs(b.x - a.x);
     const mDist = 111320 * Math.cos(center.getLat() * Math.PI / 180) * 0.001;
     this.mPerPx = pxDist > 0 ? mDist / pxDist : 1;
   },
 
   latLngToPx(latlng) {
-    const proj = this.map.getProjection();
-    const mapPt = proj.pointFromCoords(latlng);
-    const centerPt = proj.pointFromCoords(this.map.getCenter());
-    const canvas = document.getElementById('overlay-canvas');
-    return { x: canvas.width / 2 + (mapPt.x - centerPt.x), y: canvas.height / 2 + (mapPt.y - centerPt.y) };
+    // 컨테이너 픽셀(지도 좌상단 기준)을 그대로 캔버스 좌표로 사용
+    const cp = this.map.getProjection().containerPointFromCoords(latlng);
+    return { x: cp.x, y: cp.y };
   },
 
   canvasXY(e) {
@@ -873,6 +890,7 @@ const ui = {
     geocoder.addressSearch(addr, (result, status) => {
       if (status === kakao.maps.services.Status.OK) {
         const latlng = new kakao.maps.LatLng(parseFloat(result[0].y), parseFloat(result[0].x));
+        mapCtrl.map.setLevel(1);   // 옥상이 보이도록 최대 확대
         mapCtrl.map.setCenter(latlng);
         mapCtrl.buildingLatLng = latlng;
         mapCtrl.updateScale();
@@ -916,6 +934,7 @@ const ui = {
 
     this.bindToggle('btn-forward', 'btn-reverse', () => s.forward = true, () => s.forward = false);
     this.bindToggle('btn-tight', 'btn-spaced', () => s.spaced = false, () => s.spaced = true);
+    this.bindToggle('btn-mapview', 'btn-drawview', () => mapCtrl.setView('map'), () => mapCtrl.setView('draw'));
     this.bindToggle('btn-road', 'btn-sat', () => mapCtrl.setMapType('road'), () => mapCtrl.setMapType('sat'));
 
     // 건물 이동 모드 토글(독립)
