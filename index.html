@@ -14,12 +14,20 @@ body { font-family: 'Segoe UI', sans-serif; font-size: 13px; background: #f0f0f0
   color: #fff;
   padding: 8px 12px;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
+  gap: 10px;
+  align-items: stretch;
   flex-shrink: 0;
   border-bottom: 2px solid #2ecc71;
 }
+#top-controls { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+#top-result {
+  flex-shrink: 0; align-self: center;
+  display: flex; flex-direction: column; justify-content: center; gap: 3px;
+  padding: 8px 16px; background: #0e1a26; border: 2px solid #2ecc71; border-radius: 10px;
+}
+.rb-line { font-size: 16px; font-weight: 700; color: #fff; white-space: nowrap; line-height: 1.25; }
+.rb-line span { color: #2ecc71; font-size: 18px; }
+.rb-line.series { font-size: 13px; color: #f1c40f; font-weight: 600; }
 #top-panel label { font-size: 11px; color: #aaa; display: block; margin-bottom: 2px; }
 #top-panel select, #top-panel input[type="number"] {
   background: #2c3e50; color: #fff; border: 1px solid #4a6278;
@@ -44,7 +52,6 @@ body { font-family: 'Segoe UI', sans-serif; font-size: 13px; background: #f0f0f0
 .result-pill span { color: #fff; font-weight: 600; }
 .result-pill.cap { border-color: #2ecc71; }
 .result-pill.cap span { color: #2ecc71; }
-#res-series { font-size: 11px; color: #f1c40f; border-color: #6b5d1a; }
 .divider { width: 1px; height: 36px; background: #4a6278; margin: 0 2px; flex-shrink: 0; }
 
 /* 메인 영역 */
@@ -118,6 +125,7 @@ hr.rp-hr { border: none; border-top: 1px solid #eee; margin: 8px 0; }
 
 <!-- 상단 컨트롤 패널 -->
 <div id="top-panel">
+  <div id="top-controls">
   <div class="ctrl-group">
     <label>모듈 모델</label>
     <select id="sel-model">
@@ -215,14 +223,16 @@ hr.rp-hr { border: none; border-top: 1px solid #eee; margin: 8px 0; }
 
   <div class="divider"></div>
 
-  <div class="result-pill">L&nbsp;<span id="res-L">-</span>m</div>
-  <div class="result-pill">Gap&nbsp;<span id="res-Gap">-</span>m</div>
-  <div class="result-pill">Pitch&nbsp;<span id="res-Pitch">-</span>m</div>
+  <div class="result-pill">이격배치&nbsp;<span id="res-Pitch">-</span>m</div>
   <div class="result-pill">남측이격&nbsp;<span id="res-south">-</span>m</div>
   <div class="result-pill">북측이격&nbsp;<span id="res-north">-</span>m</div>
-  <div class="result-pill">모듈&nbsp;<span id="res-count">-</span>장</div>
-  <div class="result-pill cap">용량&nbsp;<span id="res-cap">-</span>kW</div>
-  <div class="result-pill" id="res-series">직병렬: -</div>
+  </div><!-- #top-controls -->
+
+  <div id="top-result">
+    <div class="rb-line">모듈 <span id="res-count">-</span> 장</div>
+    <div class="rb-line">용량 <span id="res-cap">-</span> kW</div>
+    <div class="rb-line series" id="res-series">직병렬: -</div>
+  </div>
 </div>
 
 <!-- 메인 -->
@@ -1220,9 +1230,7 @@ const ui = {
   updateResults(totalModules, totalCapKw, sel) {
     const $ = (id) => document.getElementById(id);
     const ang = sel ? sel.angle : this.state.angle;
-    const { L, Gap, Pitch } = calc.fromAngle(ang);
-    $('res-L').textContent = L.toFixed(3);
-    $('res-Gap').textContent = Gap.toFixed(3);
+    const { Pitch } = calc.fromAngle(ang);
     $('res-Pitch').textContent = Pitch.toFixed(3);
     if (sel) {
       const r = sel.forward ? placement.forward(sel) : placement.reverse(sel);
@@ -1231,7 +1239,7 @@ const ui = {
     } else { $('res-south').textContent = '-'; $('res-north').textContent = '-'; }
     const n = this.buildings.length;
     $('res-count').textContent = totalModules + (n > 1 ? ' (' + n + '동)' : '');
-    $('res-cap').textContent = (totalCapKw || 0).toFixed(3);
+    $('res-cap').textContent = (totalCapKw || 0).toFixed(1);
     $('res-series').textContent = '직병렬: ' + series.solve(totalModules).text;
 
     this.lastCapKw = totalCapKw || 0;
