@@ -52,6 +52,7 @@ body { font-family: 'Segoe UI', sans-serif; font-size: 13px; background: #f0f0f0
 .result-pill span { color: #fff; font-weight: 600; }
 .result-pill.cap { border-color: #2ecc71; }
 .result-pill.cap span { color: #2ecc71; }
+.pill-group { display: flex; gap: 6px; flex-shrink: 0; }
 .divider { width: 1px; height: 36px; background: #4a6278; margin: 0 2px; flex-shrink: 0; }
 
 /* 메인 영역 */
@@ -132,11 +133,12 @@ hr.rp-hr { border: none; border-top: 1px solid #eee; margin: 8px 0; }
       <option value="hanwha2">한화 2등급</option>
       <option value="hanwha4">한화 4등급</option>
       <option value="trina">트리나</option>
+      <option value="jasolar">자솔라</option>
     </select>
   </div>
   <div class="ctrl-group">
     <label>출력 (Wp)</label>
-    <input type="number" id="inp-wp" value="500" min="1" max="1000" step="1">
+    <input type="number" id="inp-wp" value="640" min="1" max="1000" step="1">
   </div>
 
   <div class="divider"></div>
@@ -223,9 +225,11 @@ hr.rp-hr { border: none; border-top: 1px solid #eee; margin: 8px 0; }
 
   <div class="divider"></div>
 
-  <div class="result-pill">이격배치&nbsp;<span id="res-Pitch">-</span>m</div>
-  <div class="result-pill">남측이격&nbsp;<span id="res-south">-</span>m</div>
-  <div class="result-pill">북측이격&nbsp;<span id="res-north">-</span>m</div>
+  <div class="pill-group">
+    <div class="result-pill">남측이격&nbsp;<span id="res-south">-</span>m</div>
+    <div class="result-pill">북측이격&nbsp;<span id="res-north">-</span>m</div>
+    <div class="result-pill">이격배치&nbsp;<span id="res-Pitch">-</span>m</div>
+  </div>
   </div><!-- #top-controls -->
 
   <div id="top-result">
@@ -353,6 +357,7 @@ const calc = {
     hanwha2: { h: 2.464, w: 1.134 },
     hanwha4: { h: 2.382, w: 1.134 },
     trina:   { h: 2.382, w: 1.303 },
+    jasolar: { h: 2.464, w: 1.134 }, // 자솔라 — 한화 2등급과 동일 사이즈
   },
   GAP_X: 0.01,   // X축 모듈 간격(항상 10mm)
   OFFSET: 0.5,   // 외벽 안쪽 이격(500mm) — 외벽에만 적용, 용마루 쪽엔 적용 안 함
@@ -1168,7 +1173,7 @@ const kepcoPanel = {
 // ── 8. UI 모듈 (진입점) ───────────────────────────────
 const ui = {
   state: {
-    model: 'hanwha2', wp: 500,
+    model: 'hanwha2', wp: 640,
     buildingW: 20, buildingH: 30, ridgeW: 0.5,
     angle: 10, forward: true, spaced: true,
     hasBuilding: false, // 건물이 정의되기 전엔 아무것도 그리지 않음(초기 잔상 제거)
@@ -1307,7 +1312,7 @@ const ui = {
     const s = this.state;
 
     document.getElementById('sel-model').addEventListener('change', (e) => { this.setParam('model', e.target.value); });
-    this.bindNumber('inp-wp', 'wp', 500);
+    this.bindNumber('inp-wp', 'wp', 640);
     this.bindNumber('inp-bw', 'buildingW', 20);
     this.bindNumber('inp-bh', 'buildingH', 30);
     this.bindNumber('inp-ridge', 'ridgeW', 0.5);
