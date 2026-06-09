@@ -143,7 +143,7 @@ hr.rp-hr { border: none; border-top: 1px solid #eee; margin: 8px 0; }
   </div>
   <div class="ctrl-group">
     <label>용마루 폭 (m)</label>
-    <input type="number" id="inp-ridge" value="0.5" min="0.1" max="5" step="0.1">
+    <input type="number" id="inp-ridge" value="0.5" min="0" max="5" step="0.1">
   </div>
 
   <div class="divider"></div>
@@ -479,6 +479,31 @@ const placement = {
     const avNS = calc.availableNS(state.buildingH, state.ridgeW);
     const numCols = calc.cols(state.buildingW, mW);
 
+    // 용마루 없음(폭 0): 남/북으로 쪼개지 않고 건물 전체를 하나의 지붕으로 연속 배치
+    if (state.ridgeW <= 0.001) {
+      const avFull = state.buildingH - 1.0; // 남·북 외벽 0.5씩만 제외
+      const lay = state.spaced
+        ? calc.verticalLayout(avFull, Gap, Pitch)
+        : { rows: calc.rowsByStep(avFull, Gap), hasDouble: false, stdRows: calc.rowsByStep(avFull, Gap) };
+      const step = state.spaced ? Pitch : Gap;
+      const all = [];
+      const colX0 = (c) => calc.OFFSET + c * (mW + calc.GAP_X);
+      for (let r = 0; r < lay.rows; r++) {
+        let dy;
+        if (!lay.hasDouble || r < lay.stdRows) dy = r * step;
+        else dy = (lay.stdRows - 1) * step + Gap; // 마지막 Double Row
+        const y = calc.OFFSET + dy;
+        for (let c = 0; c < numCols; c++) all.push({ x: colX0(c), y, w: mW, h: mL });
+      }
+      const g = Math.max(0, avFull - calc.usedLengthY(all, calc.OFFSET));
+      return {
+        mode: 'forward', noRidge: true, modules: all, south: all, north: [],
+        cols: numCols, southRows: lay.rows, northRows: 0,
+        avNS: avFull, southGap: g, northGap: g, total: all.length,
+        ridgeSouthEdge: state.buildingH / 2, ridgeNorthEdge: state.buildingH / 2
+      };
+    }
+
     const ridgeSouthEdge = state.buildingH / 2 - state.ridgeW / 2; // 용마루 남쪽 경계
     const ridgeNorthEdge = state.buildingH / 2 + state.ridgeW / 2; // 용마루 북쪽 경계
 
@@ -539,6 +564,29 @@ const placement = {
 
     const avV = calc.availableVertical(state.buildingH);
     const numSideCols = calc.sideCols(state.buildingW, state.ridgeW, mW);
+
+    // 용마루 없음(폭 0): 좌/우로 쪼개지 않고 건물 전체 폭에 하나의 지붕으로 연속 배치
+    if (state.ridgeW <= 0.001) {
+      const fullCols = calc.cols(state.buildingW, mW);
+      const lay = state.spaced
+        ? calc.verticalLayout(avV, Gap, Pitch)
+        : { rows: calc.rowsByStep(avV, Gap), hasDouble: false, stdRows: calc.rowsByStep(avV, Gap) };
+      const step = state.spaced ? Pitch : Gap;
+      const all = [];
+      for (let r = 0; r < lay.rows; r++) {
+        let dy;
+        if (!lay.hasDouble || r < lay.stdRows) dy = r * step;
+        else dy = (lay.stdRows - 1) * step + Gap;
+        const y = calc.OFFSET + dy;
+        for (let c = 0; c < fullCols; c++) all.push({ x: calc.OFFSET + c * (mW + calc.GAP_X), y, w: mW, h: mL });
+      }
+      const g = Math.max(0, avV - calc.usedLengthY(all, calc.OFFSET));
+      return {
+        mode: 'reverse', noRidge: true, modules: all, left: all, right: [],
+        sideCols: fullCols, rows: lay.rows, avV, southGap: g, northGap: g,
+        total: all.length, ridgeLeftX: state.buildingW / 2, ridgeRightX: state.buildingW / 2
+      };
+    }
 
     const vLayout = state.spaced
       ? calc.verticalLayout(avV, Gap, Pitch)
@@ -1223,7 +1271,8 @@ const ui = {
   bindNumber(id, key, fallback) {
     document.getElementById(id).addEventListener('input', (e) => {
       const v = parseFloat(e.target.value);
-      const val = (v > 0) ? v : fallback;
+      const ok = !isNaN(v) && (key === 'ridgeW' ? v >= 0 : v > 0); // 용마루는 0 허용
+      const val = ok ? v : fallback;
       // 치수 직접 입력인데 선택 동이 없으면 지도 중심에 1동 생성
       if ((key === 'buildingW' || key === 'buildingH') && this.selected < 0) this.addBuildingAtCenter();
       this.setParam(key, val);
