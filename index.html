@@ -829,6 +829,8 @@ const mapCtrl = {
   ready: false,       // init 또는 initNoMap 완료 후 true
   noMap: false,       // 카카오 SDK 미가용 시 도면 모드
   drawingView: false, // 지도 위가 아니라 화면 꽉 채운 도면뷰로 볼지
+  cadastralOn: false, // 지적편집도(지번 경계) 오버레이 표시 여부
+  addrMarker: null,   // 검색 주소 위치 마커
   mode: 'none',       // 캔버스 상호작용: 'none'|'move'|'measure'|'draw'
   measureLines: [],   // 완료된 측정 폴리라인들(각 = 점 배열)
   measureCur: [],     // 그리는 중인 측정 폴리라인(다중구간)
@@ -1054,6 +1056,26 @@ const mapCtrl = {
     if (!this.map) return;    // 'road' | 'sat'
     if (type === 'sat') this.map.setMapTypeId(kakao.maps.MapTypeId.HYBRID);
     else this.map.setMapTypeId(kakao.maps.MapTypeId.ROADMAP);
+  },
+
+  // 지적편집도(지번 경계·번지) 오버레이 켜기 + 검색 위치 마커
+  showCadastral(latlng) {
+    if (!this.map) return;
+    if (!this.cadastralOn) {
+      this.map.addOverlayMapTypeId(kakao.maps.MapTypeId.USE_DISTRICT);
+      this.cadastralOn = true;
+    }
+    if (this.addrMarker) this.addrMarker.setMap(null);
+    this.addrMarker = new kakao.maps.Marker({ position: latlng, map: this.map });
+  },
+  // 지적편집도 끄기 + 마커 제거(주소 삭제 시)
+  hideCadastral() {
+    if (!this.map) return;
+    if (this.cadastralOn) {
+      this.map.removeOverlayMapTypeId(kakao.maps.MapTypeId.USE_DISTRICT);
+      this.cadastralOn = false;
+    }
+    if (this.addrMarker) { this.addrMarker.setMap(null); this.addrMarker = null; }
   },
 
   // 지도뷰 ⇄ 도면뷰(화면 꽉 채움). 카카오 미가용 시엔 항상 도면뷰.
@@ -1282,6 +1304,7 @@ const ui = {
         mapCtrl.map.setLevel(1);   // 옥상이 보이도록 최대 확대
         mapCtrl.map.setCenter(latlng);
         mapCtrl.updateScale();
+        mapCtrl.showCadastral(latlng); // 지적편집도(지번 경계) ON + 위치 마커
         render.draw();
         kepcoPanel.update(result[0].address, addr);
       } else {
@@ -1347,6 +1370,14 @@ const ui = {
     document.getElementById('btn-center').addEventListener('click', () => mapCtrl.centerBuilding());
 
     document.getElementById('inp-addr').addEventListener('keydown', (e) => { if (e.key === 'Enter') this.searchAddress(); });
+    // 주소를 지우면 지적편집도·마커 제거 + 패널 초기화
+    document.getElementById('inp-addr').addEventListener('input', (e) => {
+      if (e.target.value.trim() === '') {
+        mapCtrl.hideCadastral();
+        document.getElementById('rp-kepco').innerHTML = '<h3>KEPCO 담당자</h3><p class="no-data">주소를 검색하세요.</p>';
+        document.getElementById('rp-local').innerHTML = '<h3>지자체 담당자</h3><p class="no-data">주소를 검색하세요.</p>';
+      }
+    });
     ['inp-smp', 'inp-rec'].forEach(id => document.getElementById(id).addEventListener('input', () => this.updateRevenue()));
 
     render.draw();
