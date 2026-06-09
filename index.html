@@ -201,6 +201,7 @@ hr.rp-hr { border: none; border-top: 1px solid #eee; margin: 8px 0; }
     <div class="ctrl-row">
       <button class="btn-toggle" id="btn-measure" title="지도에서 두 점을 클릭해 거리(m) 측정">거리측정</button>
       <button class="btn-toggle" id="btn-draw" title="건물 두 모서리(대각)를 클릭하면 가로·세로 자동 산출 후 배치">건물그리기</button>
+      <button class="btn-toggle" id="btn-dup" title="선택한 동을 복제(남동쪽에 생성)">복제</button>
       <button class="btn-toggle danger" id="btn-clear" title="건물·모듈·측정 모두 지우기">지우기</button>
     </div>
   </div>
@@ -1193,6 +1194,21 @@ const ui = {
     this.state.hasBuilding = true;
   },
 
+  // 선택한 동 복제 → 남동쪽에 새 동으로 생성 후 선택
+  duplicateBuilding() {
+    const b = this.currentBuilding();
+    if (!b) return;
+    const copy = Object.assign({}, b); // 필드는 원시값 + latLng만 객체
+    if (b.latLng && mapCtrl.map && !mapCtrl.noMap) {
+      copy.latLng = mapCtrl.offsetLatLng(b.latLng, b.buildingW / 2 + 4, -(b.buildingH / 2 + 4));
+    } else if (mapCtrl.map) {
+      copy.latLng = mapCtrl.map.getCenter();
+    }
+    this.buildings.push(copy);
+    this.selectBuilding(this.buildings.length - 1);
+    render.draw();
+  },
+
   // 패널 편집 → state + 선택 동에 반영 후 재렌더
   setParam(key, value) {
     this.state[key] = value;
@@ -1313,6 +1329,7 @@ const ui = {
     toolBtn('btn-move', 'move');
     toolBtn('btn-measure', 'measure');
     toolBtn('btn-draw', 'draw');
+    document.getElementById('btn-dup').addEventListener('click', () => this.duplicateBuilding());
     document.getElementById('btn-clear').addEventListener('click', () => this.clearAll());
     document.getElementById('btn-center').addEventListener('click', () => mapCtrl.centerBuilding());
 
