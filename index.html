@@ -53,6 +53,10 @@ body { font-family: 'Segoe UI', sans-serif; font-size: 13px; background: #f0f0f0
 .result-pill.cap { border-color: #2ecc71; }
 .result-pill.cap span { color: #2ecc71; }
 .pill-group { display: flex; gap: 6px; flex-shrink: 0; }
+/* 안 4 — 아이콘 + 색상코드 칩 */
+.chip { display: flex; gap: 9px; align-items: center; background: #1f2937; border-radius: 9px; padding: 5px 10px 6px; border-left: 3px solid var(--ac, #2ecc71); }
+.chip .ic { font-size: 15px; line-height: 1; align-self: center; }
+.chip .btn-toggle.active { background: var(--ac); color: #08121c; border-color: var(--ac); }
 .divider { width: 1px; height: 36px; background: #4a6278; margin: 0 2px; flex-shrink: 0; }
 
 /* 메인 영역 */
@@ -127,109 +131,52 @@ hr.rp-hr { border: none; border-top: 1px solid #eee; margin: 8px 0; }
 <!-- 상단 컨트롤 패널 -->
 <div id="top-panel">
   <div id="top-controls">
-  <div class="ctrl-group">
-    <label>모듈 모델</label>
-    <select id="sel-model">
-      <option value="hanwha2">한화 2등급</option>
-      <option value="hanwha4">한화 4등급</option>
-      <option value="trina">트리나</option>
-      <option value="jasolar">자솔라</option>
-    </select>
-  </div>
-  <div class="ctrl-group">
-    <label>출력 (Wp)</label>
-    <input type="number" id="inp-wp" value="640" min="1" max="1000" step="1">
-  </div>
-
-  <div class="divider"></div>
-
-  <div class="ctrl-group">
-    <label>건물 가로 (m)</label>
-    <input type="number" id="inp-bw" value="20" min="1" max="500" step="0.5">
-  </div>
-  <div class="ctrl-group">
-    <label>건물 세로 (m)</label>
-    <input type="number" id="inp-bh" value="30" min="1" max="500" step="0.5">
-  </div>
-  <div class="ctrl-group">
-    <label>용마루 폭 (m)</label>
-    <input type="number" id="inp-ridge" value="0.5" min="0" max="5" step="0.1">
-  </div>
-
-  <div class="divider"></div>
-
-  <div class="ctrl-group">
-    <label>경사각 (0~20°)</label>
-    <div class="ctrl-row">
-      <input type="range" id="sl-angle" min="0" max="20" value="10" step="1" style="width:80px">
-      <input type="number" id="inp-angle" min="0" max="20" value="10" step="1" style="width:50px">
+    <div class="chip" style="--ac:#3aa0ff"><span class="ic">🔆</span>
+      <div class="ctrl-group">
+        <label>모델</label>
+        <select id="sel-model">
+          <option value="hanwha2">한화 2등급</option>
+          <option value="hanwha4">한화 4등급</option>
+          <option value="trina">트리나</option>
+          <option value="jasolar">자솔라</option>
+        </select>
+      </div>
+      <div class="ctrl-group"><label>Wp</label><input type="number" id="inp-wp" value="640" min="1" max="1000" step="1"></div>
     </div>
-  </div>
 
-  <div class="divider"></div>
+    <div class="chip" style="--ac:#b06bff"><span class="ic">🏢</span>
+      <div class="ctrl-group"><label>가로(m)</label><input type="number" id="inp-bw" value="20" min="1" max="500" step="0.5"></div>
+      <div class="ctrl-group"><label>세로(m)</label><input type="number" id="inp-bh" value="30" min="1" max="500" step="0.5"></div>
+      <div class="ctrl-group"><label>용마루(m)</label><input type="number" id="inp-ridge" value="0.5" min="0" max="5" step="0.1"></div>
+    </div>
 
-  <div class="ctrl-group">
-    <label>배치 방향</label>
-    <div class="ctrl-row">
-      <button class="btn-toggle active" id="btn-forward">정방향</button>
-      <button class="btn-toggle" id="btn-reverse">역방향</button>
+    <div class="chip" style="--ac:#ffb13a"><span class="ic">📐</span>
+      <div class="ctrl-group"><label>경사각</label><div class="ctrl-row"><input type="range" id="sl-angle" min="0" max="20" value="10" step="1" style="width:72px"><input type="number" id="inp-angle" min="0" max="20" value="10" step="1" style="width:48px"></div></div>
+      <div class="ctrl-group"><label>회전</label><div class="ctrl-row"><input type="range" id="sl-rot" min="0" max="360" value="0" step="1" style="width:72px"><input type="number" id="inp-rot" min="0" max="360" value="0" step="1" style="width:48px"></div></div>
     </div>
-  </div>
-  <div class="ctrl-group">
-    <label>배치 모드</label>
-    <div class="ctrl-row">
-      <button class="btn-toggle" id="btn-tight">밀착</button>
-      <button class="btn-toggle active" id="btn-spaced">이격</button>
-    </div>
-  </div>
 
-  <div class="divider"></div>
+    <div class="chip" style="--ac:#2ecc71"><span class="ic">🧭</span>
+      <div class="ctrl-group"><label>방향</label><div class="ctrl-row"><button class="btn-toggle active" id="btn-forward">정방향</button><button class="btn-toggle" id="btn-reverse">역방향</button></div></div>
+      <div class="ctrl-group"><label>모드</label><div class="ctrl-row"><button class="btn-toggle" id="btn-tight">밀착</button><button class="btn-toggle active" id="btn-spaced">이격</button></div></div>
+    </div>
 
-  <div class="ctrl-group">
-    <label>보기</label>
-    <div class="ctrl-row">
-      <button class="btn-toggle active" id="btn-mapview">지도</button>
-      <button class="btn-toggle" id="btn-drawview">도면</button>
+    <div class="chip" style="--ac:#17c0c0"><span class="ic">🗺️</span>
+      <div class="ctrl-group"><label>보기</label><div class="ctrl-row"><button class="btn-toggle active" id="btn-mapview">지도</button><button class="btn-toggle" id="btn-drawview">도면</button></div></div>
+      <div class="ctrl-group"><label>지도</label><div class="ctrl-row"><button class="btn-toggle active" id="btn-road">일반</button><button class="btn-toggle" id="btn-sat">위성</button></div></div>
+      <div class="ctrl-group"><label>위치</label><div class="ctrl-row"><button class="btn-toggle" id="btn-move" title="켜면 건물을 드래그로 이동, 끄면 지도 이동">이동</button><button class="btn-toggle" id="btn-center" title="건물을 현재 지도 중심으로 이동">중심맞춤</button></div></div>
     </div>
-  </div>
-  <div class="ctrl-group">
-    <label>지도</label>
-    <div class="ctrl-row">
-      <button class="btn-toggle active" id="btn-road">일반</button>
-      <button class="btn-toggle" id="btn-sat">위성</button>
-    </div>
-  </div>
-  <div class="ctrl-group">
-    <label>건물 위치</label>
-    <div class="ctrl-row">
-      <button class="btn-toggle" id="btn-move" title="켜면 건물을 드래그로 이동, 끄면 지도 이동">이동</button>
-      <button class="btn-toggle" id="btn-center" title="건물을 현재 지도 중심으로 이동">중심맞춤</button>
-    </div>
-  </div>
-  <div class="ctrl-group">
-    <label>건물 도구</label>
-    <div class="ctrl-row">
-      <button class="btn-toggle" id="btn-measure" title="지도에서 두 점을 클릭해 거리(m) 측정">거리측정</button>
-      <button class="btn-toggle" id="btn-draw" title="건물 두 모서리(대각)를 클릭하면 가로·세로 자동 산출 후 배치">건물그리기</button>
-      <button class="btn-toggle" id="btn-dup" title="선택한 동을 복제(남동쪽에 생성)">복제</button>
-      <button class="btn-toggle danger" id="btn-clear" title="건물·모듈·측정 모두 지우기">지우기</button>
-    </div>
-  </div>
-  <div class="ctrl-group">
-    <label>건물 회전 (0~360°)</label>
-    <div class="ctrl-row">
-      <input type="range" id="sl-rot" min="0" max="360" value="0" step="1" style="width:80px">
-      <input type="number" id="inp-rot" min="0" max="360" value="0" step="1" style="width:50px">
-    </div>
-  </div>
 
-  <div class="divider"></div>
+    <div class="chip" style="--ac:#ff5d7a"><span class="ic">🛠️</span>
+      <div class="ctrl-group"><label>도구</label><div class="ctrl-row"><button class="btn-toggle" id="btn-measure" title="지도에서 두 점을 클릭해 거리(m) 측정">거리측정</button><button class="btn-toggle" id="btn-draw" title="건물 두 모서리(대각)를 클릭하면 가로·세로 자동 산출 후 배치">건물그리기</button><button class="btn-toggle" id="btn-dup" title="선택한 동을 복제(남동쪽에 생성)">복제</button><button class="btn-toggle danger" id="btn-clear" title="건물·모듈·측정 모두 지우기">지우기</button></div></div>
+    </div>
 
-  <div class="pill-group">
-    <div class="result-pill">남측이격&nbsp;<span id="res-south">-</span>m</div>
-    <div class="result-pill">북측이격&nbsp;<span id="res-north">-</span>m</div>
-    <div class="result-pill">이격배치&nbsp;<span id="res-Pitch">-</span>m</div>
-  </div>
+    <div class="chip" style="--ac:#8b9bb0"><span class="ic">📏</span>
+      <div class="pill-group">
+        <div class="result-pill">남측이격&nbsp;<span id="res-south">-</span>m</div>
+        <div class="result-pill">북측이격&nbsp;<span id="res-north">-</span>m</div>
+        <div class="result-pill">이격배치&nbsp;<span id="res-Pitch">-</span>m</div>
+      </div>
+    </div>
   </div><!-- #top-controls -->
 
   <div id="top-result">
